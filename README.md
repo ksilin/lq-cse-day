@@ -91,3 +91,7 @@ curl -sS -X POST "https://mcp.$LQ_REGION.aws.confluent.cloud/mcp/v1/context-engi
 
 I ran both commands on 2026-11-04. Add `.result.data` (REST) or `.rows.data` (MCP) to the `jq` filter to see the rows.
 
+
+## License
+
+Apache License 2.0. See [LICENSE](LICENSE).
