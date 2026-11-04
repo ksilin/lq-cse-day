@@ -1,0 +1,3 @@
+tools/lq.env
+__pycache__/
+.DS_Store
