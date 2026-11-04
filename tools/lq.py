@@ -5,6 +5,7 @@ Usage:
   python3 tools/lq.py "SELECT * FROM lq_orders LIMIT 5"
   python3 tools/lq.py -f query.sql
   python3 tools/lq.py --json "SHOW TABLES"
+  python3 tools/lq.py --max-rows 500 "SELECT ORDER_ID FROM lq_orders"
 
 Settings come from tools/lq.env (copy tools/lq.env.example). Environment
 variables with the same names override the file.
@@ -14,6 +15,11 @@ LQ_MODE selects the access path:
   rest            REST only (Lightning Queries, Early Access, needs an org flag).
   mcp             MCP only (queryData tool, on in every org). Needs LQ_ORG_ID.
 Both paths return the same columns and rows.
+
+Rows: REST has no row limit. Without --max-rows, lq.py asks for all rows. A large
+or slow query runs asynchronously: the API answers 202, and lq.py polls the job
+and downloads the result files. MCP returns at most 200 rows, with no warning.
+The table output shows the first 100 rows. --json prints all rows.
 
 Exit codes: 0 = rows (or none) returned, 2 = retryable error (table not
 ready yet, rate limit), 1 = any other error.
@@ -35,8 +41,11 @@ DEFAULT_ENV_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "lq.
 DEFAULTS = {"LQ_MODE": "auto"}
 OPTIONAL = ["LQ_ORG_ID"]
 REQUIRED = ["LQ_REGION", "LQ_ENV_ID", "LQ_CLUSTER_ID", "LQ_API_KEY", "LQ_API_SECRET"]
-MAX_ROWS = 200
-API_PATH = "query/v1alpha1"
+MCP_MAX_ROWS = 200  # MCP queryData returns at most 200 rows, also when you ask for more
+SHOW_ROWS = 100     # the table output shows this many rows; --json prints all
+API_PATH = "query/v1"
+JOB_TIMEOUT = 300.0  # seconds to wait for an asynchronous query
+JOB_INTERVAL = 1.0   # seconds between two job status requests
 
 RETRY = "Table not ready yet: retry in 30 s. Up to 10 minutes after ACTIVE is normal (12 for upsert)."
 HINTS = {
@@ -56,6 +65,7 @@ HINTS = {
     "FE_TABLE_NOT_FOUND": "Check the table name with SHOW TABLES. If you turned on RTCE a moment ago, retry in 30 s.",
     "FE_SQL_SELECT_ONLY": "Lightning Queries runs only SELECT, SHOW TABLES and DESCRIBE. Check the spelling of SELECT.",
     "FE_SQL_MULTI_STATEMENT": "Send one statement per request.",
+    "FE_STATEMENT_FAILED": "The asynchronous query failed. Add a LIMIT or a narrower WHERE clause: a result has a maximum size.",
     "QE_UNSUPPORTED_AGGREGATION": "Not supported in Lightning Queries: COUNT, SUM, GROUP BY, DISTINCT.",
     "QE_UNSUPPORTED_JOIN": "Not supported in Lightning Queries: JOIN. Join in Flink before RTCE, or in the client.",
     "QE_UNSUPPORTED_SUBQUERY": "Not supported in Lightning Queries: subqueries. Use two queries.",
@@ -68,7 +78,7 @@ RETRYABLE = {"FE_CUSTOMER_NOT_FOUND", "FE_BACKEND_UNAVAILABLE", "FE_TABLE_NOT_AV
              "DP_TABLE_NOT_AVAILABLE", "DP_INVALID_TABLE", "FE_RATE_LIMITED", "RATE_LIMIT_EXCEEDED", "query_timeout",
              "FE_TABLE_NOT_FOUND", "MT_METADATA_UPDATE"}
 STATUS_HINTS = {401: "Use a Global API key (not a cluster key). Check the key and the secret.",
-                404: "Wrong URL path. It must end in /query/v1alpha1.",
+                404: "Wrong URL path. It must end in /query/v1.",
                 429: HINTS["FE_RATE_LIMITED"],
                 500: "Server error. Retry. If it repeats, check that the region supports Lightning Queries."}
 
@@ -131,11 +141,15 @@ def mcp_endpoint(settings: dict) -> str:
             f"kafka-clusters/{settings['LQ_CLUSTER_ID']}")
 
 
-def build_request(settings: dict, sql: str, max_rows: int = MAX_ROWS) -> urllib.request.Request:
-    if not 1 <= max_rows <= MAX_ROWS:
-        raise ValueError(f"max_rows must be 1..{MAX_ROWS}; the server returns at most {MAX_ROWS} rows")
+def build_request(settings: dict, sql: str, max_rows: int | None = None) -> urllib.request.Request:
+    """A query request. Without max_rows, the API returns all rows."""
+    options = {"result_format": "JSON"}
+    if max_rows is not None:
+        if max_rows < 1:
+            raise ValueError("max_rows must be 1 or more")
+        options["max_result_rows"] = max_rows
     body = {"catalog_name": settings["LQ_ENV_ID"], "database_name": settings["LQ_CLUSTER_ID"],
-            "query": sql, "options": {"max_result_rows": max_rows, "result_format": "JSON"}}
+            "query": sql, "options": options}
     return urllib.request.Request(
         endpoint(settings), data=json.dumps(body).encode(), method="POST",
         headers={"Authorization": auth_header(settings["LQ_API_KEY"], settings["LQ_API_SECRET"]),
@@ -168,7 +182,7 @@ def _error_fields(body) -> tuple[str, str]:
 def format_error(status: int, body, via: str = "rest") -> str:
     code, detail = _error_fields(body)
     hint = HINTS.get(code) or STATUS_HINTS.get(status, "")
-    parts = ["MCP" if via == "mcp" and not status else f"HTTP {status}"]
+    parts = [{"mcp": "MCP", "job": "async job"}.get(via, "HTTP") if not status else f"HTTP {status}"]
     if code:
         parts.append(code)
     if detail:
@@ -184,7 +198,7 @@ def reset_mode() -> None:
     _mode["switched"] = False
 
 
-def run_query(settings: dict, sql: str, max_rows: int = MAX_ROWS,
+def run_query(settings: dict, sql: str, max_rows: int | None = None,
               opener=urllib.request.urlopen) -> tuple[float, list[str], list[list[str]]]:
     mode = (settings.get("LQ_MODE") or "auto").lower()
     if mode == "mcp" or (mode == "auto" and _mode["switched"]):
@@ -200,9 +214,10 @@ def run_query(settings: dict, sql: str, max_rows: int = MAX_ROWS,
         return run_query_mcp(settings, sql, max_rows, opener)
 
 
-def build_mcp_request(settings: dict, sql: str, max_rows: int = MAX_ROWS) -> urllib.request.Request:
-    if not 1 <= max_rows <= MAX_ROWS:
-        raise ValueError(f"max_rows must be 1..{MAX_ROWS}; the server returns at most {MAX_ROWS} rows")
+def build_mcp_request(settings: dict, sql: str, max_rows: int | None = None) -> urllib.request.Request:
+    if max_rows is not None and max_rows < 1:
+        raise ValueError("max_rows must be 1 or more")
+    max_rows = min(max_rows or MCP_MAX_ROWS, MCP_MAX_ROWS)
     # queryData needs a topic_name. The server runs the SQL as it is, so the first table name is enough.
     m = re.search(r"\b(?:FROM|DESCRIBE)\s+[`\"]?([A-Za-z0-9_.-]+)", sql, re.IGNORECASE)
     body = {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
@@ -228,7 +243,7 @@ def parse_mcp(raw: str) -> tuple[list[str], list[list[str]]]:
     return parse_rows({"result": inner.get("rows") or {}})
 
 
-def run_query_mcp(settings: dict, sql: str, max_rows: int = MAX_ROWS,
+def run_query_mcp(settings: dict, sql: str, max_rows: int | None = None,
                   opener=urllib.request.urlopen) -> tuple[float, list[str], list[list[str]]]:
     request = build_mcp_request(settings, sql, max_rows)
     start = time.monotonic()
@@ -248,13 +263,11 @@ def run_query_mcp(settings: dict, sql: str, max_rows: int = MAX_ROWS,
     return elapsed, columns, rows
 
 
-def run_query_rest(settings: dict, sql: str, max_rows: int = MAX_ROWS,
-                   opener=urllib.request.urlopen) -> tuple[float, list[str], list[list[str]]]:
-    request = build_request(settings, sql, max_rows)
-    start = time.monotonic()
+def _send(request, opener) -> tuple[int, dict, bytes]:
+    """Send one request. Return (status, headers, body). An HTTP error becomes a QueryError."""
     try:
         with opener(request, timeout=60) as response:
-            raw = response.read()
+            return getattr(response, "status", 200), dict(getattr(response, "headers", {}) or {}), response.read()
     except urllib.error.HTTPError as e:
         raw = e.read().decode(errors="replace")
         try:
@@ -263,8 +276,63 @@ def run_query_rest(settings: dict, sql: str, max_rows: int = MAX_ROWS,
             body = raw
         code, detail = _error_fields(body)
         raise QueryError(e.code, code, detail or format_error(e.code, body)) from None
+
+
+def _header(headers: dict, name: str) -> str:
+    for k, v in headers.items():
+        if k.lower() == name.lower():
+            return v
+    return ""
+
+
+def wait_for_job(settings: dict, location: str, opener=urllib.request.urlopen) -> list[str]:
+    """Poll the job status until SUCCEEDED or FAILED. Return the result URLs."""
+    url = f"https://sql.{settings['LQ_REGION']}.aws.confluent.cloud{location}"
+    auth = auth_header(settings["LQ_API_KEY"], settings["LQ_API_SECRET"])
+    start = time.monotonic()
+    while True:
+        request = urllib.request.Request(url, method="GET",
+                                         headers={"Authorization": auth, "Accept": "application/json"})
+        _, _, raw = _send(request, opener)
+        body = json.loads(raw)
+        state = body.get("result", {}).get("state")
+        if state == "SUCCEEDED":
+            return body["result"].get("result_urls") or []
+        if state == "FAILED":
+            code, detail = _error_fields(body)
+            raise QueryError(0, code or "FE_STATEMENT_FAILED", detail, via="job")
+        if time.monotonic() - start >= JOB_TIMEOUT:
+            raise QueryError(0, "query_timeout", f"the asynchronous query was still {state} after {JOB_TIMEOUT:.0f} s",
+                             via="job")
+        time.sleep(JOB_INTERVAL)
+
+
+def download_results(urls: list[str], opener=urllib.request.urlopen) -> tuple[list[str], list[list[str]]]:
+    """Download the result files of a job. A presigned URL must have no Authorization header."""
+    columns, rows = [], []
+    for url in urls:
+        _, _, raw = _send(urllib.request.Request(url, method="GET"), opener)
+        cols, part = parse_rows(json.loads(raw))
+        columns = columns or cols
+        rows += part
+    return columns, rows
+
+
+def run_query_rest(settings: dict, sql: str, max_rows: int | None = None,
+                   opener=urllib.request.urlopen) -> tuple[float, list[str], list[list[str]]]:
+    request = build_request(settings, sql, max_rows)
+    start = time.monotonic()
+    status, headers, raw = _send(request, opener)
+    if status == 202:
+        body = json.loads(raw)
+        statement = body.get("result", {}).get("statement_id", "?")
+        print(f"note: the server runs this query asynchronously ({statement}). Waiting for the result.",
+              file=sys.stderr)
+        urls = wait_for_job(settings, _header(headers, "Location"), opener)
+        columns, rows = download_results(urls, opener)
+    else:
+        columns, rows = parse_rows(json.loads(raw))
     elapsed = time.monotonic() - start
-    columns, rows = parse_rows(json.loads(raw))
     return elapsed, columns, rows
 
 
@@ -291,7 +359,7 @@ def main(argv: list[str], opener=urllib.request.urlopen, settings: dict | None =
     p = argparse.ArgumentParser(description="Run one Lightning query over REST.")
     p.add_argument("sql", nargs="?", help="the SQL statement")
     p.add_argument("-f", "--file", help="read the SQL from a file")
-    p.add_argument("--max-rows", type=int, default=MAX_ROWS, help="1..200 (default 200)")
+    p.add_argument("--max-rows", type=int, help="at most this many rows (default: all rows; MCP: at most 200)")
     p.add_argument("--json", action="store_true", help="print columns and rows as JSON")
     p.add_argument("--env-file", help="settings file (default tools/lq.env)")
     args = p.parse_args(argv)
@@ -321,7 +389,9 @@ def main(argv: list[str], opener=urllib.request.urlopen, settings: dict | None =
         print(json.dumps({"columns": columns, "rows": rows, "elapsed_s": round(elapsed, 3)}, indent=2))
     else:
         if columns or rows:
-            print(format_table(columns, rows))
+            print(format_table(columns, rows[:SHOW_ROWS]))
+        if len(rows) > SHOW_ROWS:
+            print(f"... {len(rows) - SHOW_ROWS} more rows. Use --json to print all rows, or add a LIMIT.")
         print(f"{len(rows)} rows in {elapsed:.2f} s")
     return 0
 

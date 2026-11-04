@@ -41,7 +41,7 @@ The labs use these scripts. Each script starts with a comment that gives its usa
 
 Run queries:
 
-- `tools/lq.py "<sql>"` runs one Lightning query and prints the rows as a table. `--json` prints the columns and rows as JSON. `-f <file>` reads the SQL from a file. Exit code 0 means rows (or no rows). Exit code 2 means "retry later", for example when the table is not ready yet. Exit code 1 means any other error.
+- `tools/lq.py "<sql>"` runs one Lightning query and prints the rows as a table. `--json` prints the columns and rows as JSON. `-f <file>` reads the SQL from a file. The table shows the first 100 rows, and `--json` prints all rows. `--max-rows <n>` asks for at most n rows. Exit code 0 means rows (or no rows). Exit code 2 means "retry later", for example when the table is not ready yet. Exit code 1 means any other error.
 - `tools/lq_watch.py "<sql>"` repeats a query once per second until it returns rows, and prints the seconds it waited. `--until-empty` waits until the query returns no rows. Lab 2 and Lab 3 measure the freshness with it.
 
 Check the setup:
@@ -58,15 +58,17 @@ Flink and Kafka:
 
 ### How `lq.py` works
 
-1. It sends one HTTP POST to `https://sql.<region>.aws.confluent.cloud/query/v1alpha1`. The Global API key is the basic auth.
+1. It sends one HTTP POST to `https://sql.<region>.aws.confluent.cloud/query/v1`. The Global API key is the basic auth.
 2. The body names the environment as `catalog_name` and the cluster as `database_name`. The topic name is the table name.
 3. In `LQ_MODE=auto`, the answer `403 api_not_enabled` means that the org has no REST access. Then `lq.py` sends the same query to the MCP tool `queryData`, and uses MCP for the rest of the run.
-4. Both paths give the same columns and rows. `lq.py` adds the time of the request and a hint for each known error code.
+4. A query with a large result, or a slow query, runs asynchronously. The API then answers `202` with a job URL. `lq.py` polls the job every second and downloads the result files. A presigned download URL takes no `Authorization` header.
+5. REST has no row limit. MCP returns at most 200 rows, with no warning.
+6. Both paths give the same columns and rows. `lq.py` adds the time of the request and a hint for each known error code.
 
 The same requests with `curl`. Load the settings first with `set -a; . tools/lq.env; set +a`. REST works only in an org with REST access:
 
 ```bash
-curl -sS -X POST "https://sql.$LQ_REGION.aws.confluent.cloud/query/v1alpha1" \
+curl -sS -X POST "https://sql.$LQ_REGION.aws.confluent.cloud/query/v1" \
   -u "$LQ_API_KEY:$LQ_API_SECRET" -H "Content-Type: application/json" \
   -d "{\"catalog_name\":\"$LQ_ENV_ID\",\"database_name\":\"$LQ_CLUSTER_ID\",\"query\":\"SELECT ORDER_ID, STATUS FROM lq_orders LIMIT 1\"}" \
   | jq -c '[.result.schema.columns[].name]'

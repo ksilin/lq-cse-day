@@ -35,7 +35,9 @@ These are normal for some minutes after RTCE is `ACTIVE`. `lq.py` exits with cod
 - `QE_UNSUPPORTED_*` (aggregation, join, subquery, set operation, window function). Cause: not supported in Lightning Queries. Fix: change the query, or do the work in Flink before RTCE.
 - `FE_SQL_SELECT_ONLY`, "Only SELECT queries are supported." Cause: `INSERT`, DDL, or a typo such as `SELEC`.
 - `FE_SQL_MULTI_STATEMENT`. Cause: two statements. Fix: one per request.
-- Exactly 200 rows. Cause: the row limit. The server gives no warning.
+- Exactly 200 rows. Cause: you used MCP, which returns at most 200 rows with no warning. REST returns all rows.
+- `note: the server runs this query asynchronously`. Cause: a large result or a slow query. This is normal. `lq.py` waits for the job and downloads the result.
+- `FE_STATEMENT_FAILED`. Cause: an asynchronous query failed, for example because its result is too large or it ran too long. Fix: add a `LIMIT` or a narrower `WHERE` clause.
 
 ## Upsert
 

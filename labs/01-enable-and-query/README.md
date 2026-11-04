@@ -285,10 +285,10 @@ You are done with Lab 1 when `lq.py` prints rows from your table.
 
 ## Notes
 
-- The raw REST request, for an org with REST access: `curl -sS -X POST "https://sql.$LQ_REGION.aws.confluent.cloud/query/v1alpha1" -u "$LQ_API_KEY:$LQ_API_SECRET" -H "Content-Type: application/json" -d "{\"catalog_name\":\"$LQ_ENV_ID\",\"database_name\":\"$LQ_CLUSTER_ID\",\"query\":\"SELECT STATUS FROM lq_orders LIMIT 1\"}" | jq -c .result.data`. The section Tools of the main README shows the REST and the MCP request.
+- The raw REST request, for an org with REST access: `curl -sS -X POST "https://sql.$LQ_REGION.aws.confluent.cloud/query/v1" -u "$LQ_API_KEY:$LQ_API_SECRET" -H "Content-Type: application/json" -d "{\"catalog_name\":\"$LQ_ENV_ID\",\"database_name\":\"$LQ_CLUSTER_ID\",\"query\":\"SELECT STATUS FROM lq_orders LIMIT 1\"}" | jq -c .result.data`. The section Tools of the main README shows the REST and the MCP request.
 - `403 api_not_enabled` over REST means that the org has no REST access. It can also mean that the Global key belongs to another org. A Global key belongs to the org that was selected when you created it.
 - Column names are not case-sensitive without quotes. With quotes they must be upper case: `"ORDER_ID"` works, `"order_id"` fails with `FE_SQL_VALIDATION_ERROR`.
-- `PRODUCED_AT` is in UTC. A query returns at most 200 rows, also with `LIMIT 500`, and with no warning.
+- `PRODUCED_AT` is in UTC. A REST query returns all rows. `tools/lq.py` shows the first 100 in the table, and `--json` prints all. MCP returns at most 200 rows.
 - The CLI exits with 0 also when a Flink statement fails. Check the status with the first Look command, or with `python3 tools/lq_doctor.py`.
 - Never delete a topic and create it again under the same name. RTCE can keep old state for it. Use a new name.
 
@@ -337,5 +337,5 @@ rm tools/lq.env
 ## Versions
 
 - Confluent CLI v4.81.0. Homebrew cask `confluent-cli` shows 4.81.0 as newest on 2026-10-26.
-- REST API path `query/v1alpha1`. The path `query/v1` also works since 2026-10-19. Both stay.
+- REST API path `query/v1`, as in the docs. The old path `query/v1alpha1` also still works (2026-11-04).
 - Python 3.14.7 on the test machine. `tools/lq.py` needs Python 3.10 or later.

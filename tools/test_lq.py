@@ -62,17 +62,18 @@ class TestLq(unittest.TestCase):
     def test_build_request_url_and_body(self):
         req = lq.build_request(SETTINGS, "SELECT 1")
         self.assertEqual(
-            req.full_url, "https://sql.eu-central-1.aws.confluent.cloud/query/v1alpha1")
+            req.full_url, "https://sql.eu-central-1.aws.confluent.cloud/query/v1")
         self.assertEqual(req.get_method(), "POST")
         body = json.loads(req.data)
         self.assertEqual(body["catalog_name"], "env-abc")
         self.assertEqual(body["database_name"], "lkc-abc")
         self.assertEqual(body["query"], "SELECT 1")
-        self.assertEqual(body["options"]["max_result_rows"], 200)
+        # The API has no row limit. Without --max-rows, lq.py asks for all rows.
+        self.assertNotIn("max_result_rows", body["options"])
 
-    def test_max_rows_above_200_is_rejected_locally(self):
-        with self.assertRaises(ValueError):
-            lq.build_request(SETTINGS, "SELECT 1", max_rows=500)
+    def test_max_rows_above_200_goes_to_the_api(self):
+        body = json.loads(lq.build_request(SETTINGS, "SELECT 1", max_rows=500).data)
+        self.assertEqual(body["options"]["max_result_rows"], 500)
 
     def test_parse_rows_list_shape(self):
         body = {"result": {"schema": {"columns": [{"name": "A"}, {"name": "B"}]},
@@ -384,6 +385,124 @@ class TestMcp(unittest.TestCase):
     def test_region_has_no_hidden_org_default(self):
         self.assertNotIn("LQ_ORG_ID", lq.DEFAULTS)
 
+
+
+class Reply(io.BytesIO):
+    """A fake HTTP response with a status and headers."""
+    def __init__(self, status, body, headers=None):
+        super().__init__(body if isinstance(body, bytes) else json.dumps(body).encode())
+        self.status = status
+        self.headers = headers or {}
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+def script_opener(replies, seen):
+    """Return the replies in order, and record each request."""
+    it = iter(replies)
+
+    def opener(request, timeout=None):
+        seen.append(request)
+        return next(it)
+    return opener
+
+
+STATUS_PATH = "/query/v1/jobs/env-abc/lkc-abc/lq_orders/statement_1/status"
+def accepted():
+    return Reply(202, {"kind": "Statement", "result": {"statement_id": "statement_1", "topic_name": "lq_orders"}},
+                 {"Location": STATUS_PATH})
+
+
+def job(state, urls=(), errors=None):
+    body = {"kind": "JobStatus", "result": {"state": state, "result_urls": list(urls)}}
+    if errors:
+        body["errors"] = errors
+    return Reply(200, body)
+
+
+def result_file(rows):
+    return Reply(200, {"result": {"schema": {"columns": [{"name": "A"}]}, "data": rows}})
+
+
+@mock.patch("lq.time.sleep", lambda s: None)
+class TestAsync(unittest.TestCase):
+    def test_202_polls_the_job_and_downloads_all_result_files(self):
+        seen = []
+        replies = [accepted(), job("RUNNING"), job("SUCCEEDED", ["https://s3.example/r1", "https://s3.example/r2"]),
+                   result_file([["1"], ["2"]]), result_file([["3"]])]
+        with mock.patch("sys.stderr", io.StringIO()):
+            _, cols, rows = lq.run_query(dict(SETTINGS, LQ_MODE="rest"), "SELECT A FROM lq_orders",
+                                         opener=script_opener(replies, seen))
+        self.assertEqual((cols, rows), (["A"], [["1"], ["2"], ["3"]]))
+        self.assertEqual(seen[1].full_url, "https://sql.eu-central-1.aws.confluent.cloud" + STATUS_PATH)
+        self.assertEqual(seen[1].get_method(), "GET")
+        self.assertTrue(seen[1].get_header("Authorization", "").startswith("Basic "))
+        # Cloud storage rejects a presigned URL with an Authorization header.
+        self.assertEqual(seen[3].full_url, "https://s3.example/r1")
+        self.assertIsNone(seen[3].get_header("Authorization"))
+        self.assertIsNone(seen[4].get_header("Authorization"))
+
+    def test_202_says_that_the_query_runs_asynchronously(self):
+        replies = [accepted(), job("SUCCEEDED", ["https://s3.example/r1"]), result_file([["1"]])]
+        err = io.StringIO()
+        with mock.patch("sys.stderr", err):
+            lq.run_query(dict(SETTINGS, LQ_MODE="rest"), "SELECT A FROM lq_orders", opener=script_opener(replies, []))
+        self.assertIn("asynchronous", err.getvalue())
+        self.assertIn("statement_1", err.getvalue())
+
+    def test_failed_job_is_a_query_error_with_the_detail(self):
+        errors = [{"code": "FE_STATEMENT_FAILED", "title": "Statement Failed",
+                   "detail": "The statement exceeded the maximum execution time."}]
+        replies = [accepted(), job("FAILED", errors=errors)]
+        with mock.patch("sys.stderr", io.StringIO()), self.assertRaises(lq.QueryError) as ctx:
+            lq.run_query(dict(SETTINGS, LQ_MODE="rest"), "SELECT A FROM lq_orders", opener=script_opener(replies, []))
+        self.assertEqual(ctx.exception.code, "FE_STATEMENT_FAILED")
+        self.assertIn("maximum execution time", ctx.exception.message)
+        self.assertFalse(ctx.exception.retryable)
+
+    def test_job_that_runs_too_long_is_a_retryable_timeout(self):
+        replies = [accepted()] + [job("RUNNING") for _ in range(1000)]
+        clock = itertools.count(0, 10)
+        with mock.patch("sys.stderr", io.StringIO()), mock.patch("lq.time.monotonic", lambda: next(clock)), \
+                self.assertRaises(lq.QueryError) as ctx:
+            lq.run_query(dict(SETTINGS, LQ_MODE="rest"), "SELECT A FROM lq_orders", opener=script_opener(replies, []))
+        self.assertEqual(ctx.exception.code, "query_timeout")
+        self.assertTrue(ctx.exception.retryable)
+
+
+class TestRowLimits(unittest.TestCase):
+    def test_mcp_asks_for_200_rows_without_max_rows(self):
+        self.assertEqual(json.loads(lq.build_mcp_request(SETTINGS, "SELECT A FROM t").data)
+                         ["params"]["arguments"]["max_result_rows"], 200)
+
+    def test_mcp_caps_max_rows_at_200(self):
+        # The server returns at most 200 rows over MCP, also for 500, and with no warning.
+        self.assertEqual(json.loads(lq.build_mcp_request(SETTINGS, "SELECT A FROM t", 500).data)
+                         ["params"]["arguments"]["max_result_rows"], 200)
+
+    def test_table_output_shows_100_rows_and_says_how_many_more(self):
+        body = {"result": {"schema": {"columns": [{"name": "A"}]}, "data": [[str(i)] for i in range(150)]}}
+        out = io.StringIO()
+        with redirect_stdout(out):
+            code = lq.main(["SELECT A FROM t"], opener=ok_opener(body), settings=dict(SETTINGS, LQ_MODE="rest"))
+        self.assertEqual(code, 0)
+        lines = [line.strip() for line in out.getvalue().splitlines()]
+        text = out.getvalue()
+        self.assertIn("99", lines)
+        self.assertNotIn("100", lines)
+        self.assertIn("50 more rows", text)
+        self.assertIn("150 rows in", text)
+
+    def test_json_output_has_all_rows(self):
+        body = {"result": {"schema": {"columns": [{"name": "A"}]}, "data": [[str(i)] for i in range(150)]}}
+        out = io.StringIO()
+        with redirect_stdout(out):
+            lq.main(["--json", "SELECT A FROM t"], opener=ok_opener(body), settings=dict(SETTINGS, LQ_MODE="rest"))
+        self.assertEqual(len(json.loads(out.getvalue())["rows"]), 150)
 
 if __name__ == "__main__":
     unittest.main()
