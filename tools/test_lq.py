@@ -504,5 +504,59 @@ class TestRowLimits(unittest.TestCase):
             lq.main(["--json", "SELECT A FROM t"], opener=ok_opener(body), settings=dict(SETTINGS, LQ_MODE="rest"))
         self.assertEqual(len(json.loads(out.getvalue())["rows"]), 150)
 
+
+class TestMainErrors(unittest.TestCase):
+    def run_main(self, argv, opener, settings):
+        out, err = io.StringIO(), io.StringIO()
+        with redirect_stdout(out), mock.patch("sys.stderr", err):
+            try:
+                code = lq.main(argv, opener=opener, settings=settings)
+            except SystemExit as e:
+                code = e.code
+        return code, out.getvalue() + err.getvalue()
+
+    def test_max_rows_0_is_a_usage_error_not_a_json_error(self):
+        code, text = self.run_main(["--max-rows", "0", "SELECT 1"], ok_opener({}), dict(SETTINGS, LQ_MODE="rest"))
+        self.assertEqual(code, 1)  # not 2: 2 means "retry later"
+        self.assertIn("--max-rows", text)
+        self.assertNotIn("not JSON", text)
+
+    def test_network_error_names_the_mcp_endpoint_in_mcp_mode(self):
+        def down(request, timeout=None):
+            raise urllib.error.URLError("no route")
+        code, text = self.run_main(["SELECT A FROM lq_orders"], down, dict(SETTINGS, LQ_MODE="mcp"))
+        self.assertEqual(code, 1)
+        self.assertIn("https://mcp.eu-central-1.aws.confluent.cloud", text)
+        self.assertNotIn("https://sql.", text)
+
+    def test_network_error_names_the_rest_endpoint_in_rest_mode(self):
+        def down(request, timeout=None):
+            raise urllib.error.URLError("no route")
+        code, text = self.run_main(["SELECT 1"], down, dict(SETTINGS, LQ_MODE="rest"))
+        self.assertIn("https://sql.eu-central-1.aws.confluent.cloud", text)
+
+    def test_timeout_names_the_url_that_did_not_answer(self):
+        def slow(request, timeout=None):
+            raise TimeoutError()
+        code, text = self.run_main(["SELECT A FROM lq_orders"], slow, dict(SETTINGS, LQ_MODE="mcp"))
+        self.assertEqual(code, 2)
+        self.assertIn("https://mcp.", text)
+
+    def test_network_error_during_the_download_names_the_download_host(self):
+        seen = []
+        def opener(request, timeout=None):
+            seen.append(request)
+            if len(seen) == 1:
+                return accepted()
+            if len(seen) == 2:
+                return job("SUCCEEDED", ["https://s3.example/r1?X-Amz-Signature=secret"])
+            raise urllib.error.URLError("no route")
+        with mock.patch("lq.time.sleep", lambda s: None):
+            code, text = self.run_main(["SELECT A FROM lq_orders"], opener, dict(SETTINGS, LQ_MODE="rest"))
+        self.assertEqual(code, 1)
+        self.assertIn("https://s3.example", text)
+        # The query string of a presigned URL is a credential. Never print it.
+        self.assertNotIn("X-Amz-Signature", text)
+
 if __name__ == "__main__":
     unittest.main()

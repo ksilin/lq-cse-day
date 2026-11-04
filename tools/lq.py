@@ -83,6 +83,26 @@ STATUS_HINTS = {401: "Use a Global API key (not a cluster key). Check the key an
                 500: "Server error. Retry. If it repeats, check that the region supports Lightning Queries."}
 
 
+class NetworkError(urllib.error.URLError):
+    """No answer from a host. url is the address without the query string: a presigned URL holds a credential there."""
+    def __init__(self, url: str, reason, timed_out: bool = False):
+        super().__init__(reason)
+        self.url = url.split("?", 1)[0]
+        self.timed_out = timed_out
+
+
+def _open(request, opener):
+    """Open a request. A network error or a timeout becomes a NetworkError with the URL."""
+    try:
+        return opener(request, timeout=60)
+    except urllib.error.HTTPError:
+        raise
+    except urllib.error.URLError as e:
+        raise NetworkError(request.full_url, e.reason) from None
+    except TimeoutError:
+        raise NetworkError(request.full_url, "timeout", timed_out=True) from None
+
+
 class QueryError(Exception):
     def __init__(self, status: int, code: str, message: str, via: str = "rest"):
         super().__init__(f"{status} {code}: {message}")
@@ -248,7 +268,7 @@ def run_query_mcp(settings: dict, sql: str, max_rows: int | None = None,
     request = build_mcp_request(settings, sql, max_rows)
     start = time.monotonic()
     try:
-        with opener(request, timeout=60) as response:
+        with _open(request, opener) as response:
             raw = response.read().decode(errors="replace")
     except urllib.error.HTTPError as e:
         text = e.read().decode(errors="replace")
@@ -266,7 +286,7 @@ def run_query_mcp(settings: dict, sql: str, max_rows: int | None = None,
 def _send(request, opener) -> tuple[int, dict, bytes]:
     """Send one request. Return (status, headers, body). An HTTP error becomes a QueryError."""
     try:
-        with opener(request, timeout=60) as response:
+        with _open(request, opener) as response:
             return getattr(response, "status", 200), dict(getattr(response, "headers", {}) or {}), response.read()
     except urllib.error.HTTPError as e:
         raw = e.read().decode(errors="replace")
@@ -355,11 +375,28 @@ def format_table(columns: list[str], rows: list[list[str]], width: int = 40) -> 
     return "\n".join(lines)
 
 
+def _positive(text: str) -> int:
+    try:
+        n = int(text)
+    except ValueError:
+        n = 0
+    if n < 1:
+        raise argparse.ArgumentTypeError(f"must be a whole number of 1 or more, not {text!r}. Leave it out for all rows")
+    return n
+
+
+class _Parser(argparse.ArgumentParser):
+    def error(self, message):
+        # argparse exits with 2, but 2 means "retry later" here. A usage error is not retryable.
+        self.print_usage(sys.stderr)
+        self.exit(1, f"{self.prog}: error: {message}\n")
+
+
 def main(argv: list[str], opener=urllib.request.urlopen, settings: dict | None = None) -> int:
-    p = argparse.ArgumentParser(description="Run one Lightning query over REST.")
+    p = _Parser(prog="lq.py", description="Run one Lightning query over REST or MCP.")
     p.add_argument("sql", nargs="?", help="the SQL statement")
     p.add_argument("-f", "--file", help="read the SQL from a file")
-    p.add_argument("--max-rows", type=int, help="at most this many rows (default: all rows; MCP: at most 200)")
+    p.add_argument("--max-rows", type=_positive, help="at most this many rows (default: all rows; MCP: at most 200)")
     p.add_argument("--json", action="store_true", help="print columns and rows as JSON")
     p.add_argument("--env-file", help="settings file (default tools/lq.env)")
     args = p.parse_args(argv)
@@ -376,13 +413,13 @@ def main(argv: list[str], opener=urllib.request.urlopen, settings: dict | None =
     except QueryError as e:
         print(format_error(e.status, {"code": e.code, "message": e.message}, e.via), file=sys.stderr)
         return 2 if e.retryable else 1
-    except urllib.error.URLError as e:
-        print(f"Cannot reach {endpoint(settings)}: {e.reason}", file=sys.stderr)
+    except NetworkError as e:
+        if e.timed_out:
+            print(f"No answer from {e.url} within 60 s. Retry.", file=sys.stderr)
+            return 2
+        print(f"Cannot reach {e.url}: {e.reason}. Check LQ_REGION and the network.", file=sys.stderr)
         return 1
-    except TimeoutError:
-        print(f"No answer from {endpoint(settings)} within 60 s. Retry.", file=sys.stderr)
-        return 2
-    except ValueError as e:
+    except json.JSONDecodeError as e:
         print(f"The answer is not JSON ({e}). Check LQ_REGION and the network.", file=sys.stderr)
         return 1
     if args.json:

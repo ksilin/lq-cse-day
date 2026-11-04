@@ -1,6 +1,6 @@
 # Lab 1: turn on RTCE for a topic and run a Lightning query
 
-Verified: 2026-10-27 in a new environment on Confluent Cloud (AWS eu-central-1), Confluent CLI v4.81.0, Python 3.14.
+Verified: 2026-11-04 on Confluent Cloud (AWS eu-central-1), Confluent CLI v4.82.0, Python 3.14. First run in a new environment: 2026-10-27.
 
 ## What we test
 
@@ -336,6 +336,6 @@ rm tools/lq.env
 
 ## Versions
 
-- Confluent CLI v4.81.0. Homebrew cask `confluent-cli` shows 4.81.0 as newest on 2026-10-26.
+- Confluent CLI v4.82.0. Homebrew cask `confluent-cli` shows 4.82.0 as newest on 2026-11-04. The labs need v4.81 or later. `confluent lightning query` needs v4.82.
 - REST API path `query/v1`, as in the docs. The old path `query/v1alpha1` also still works (2026-11-04).
 - Python 3.14.7 on the test machine. `tools/lq.py` needs Python 3.10 or later.
