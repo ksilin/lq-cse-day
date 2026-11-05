@@ -135,6 +135,20 @@ class TestDoctor(unittest.TestCase):
         self.assertNotIn("never shown", text)
         self.assertIn("fix: do this", text)
 
+    def test_cloud_key_over_mcp_is_a_fail_with_a_fix(self):
+        def run(settings, sql):
+            if settings["LQ_MODE"] == "mcp":
+                raise lq.QueryError(0, "resource_not_found", "x", via="mcp")
+            return ok_run(settings, sql)
+        c = by_name(d.run_checks(S, cli=fake_cli(GOOD), run=run))["query over MCP"]
+        self.assertEqual(c.status, "FAIL")
+        self.assertIn("Cloud API key", c.fix)
+
+    def test_report_columns_stay_aligned_with_long_names(self):
+        text = d.report([d.Check("feed lq-mblumberg-feed-orders-latest", "OK", "x"), d.Check("b", "OK", "y")])
+        a, b = text.splitlines()
+        self.assertEqual(a.index(" x"), b.index(" y"))
+
 
 class TestSelftest(unittest.TestCase):
     def test_run_steps_reports_pass_fail_and_skip(self):

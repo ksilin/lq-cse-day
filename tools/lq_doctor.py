@@ -82,6 +82,8 @@ def check_query(s: dict, mode: str, run=lq.run_query) -> Check:
                          "Nothing to do with LQ_MODE=auto or mcp: lq.py then uses MCP.")
         if e.status == 401:
             return Check(name, "FAIL", f"401 {e.code}", "Check LQ_API_KEY and LQ_API_SECRET. Use a Global key of this org.")
+        if mode == "mcp" and e.code == "resource_not_found":
+            return Check(name, "FAIL", f"{e.code}: {e.message}"[:120], lq.HINTS["resource_not_found"])
         if e.retryable:
             return Check(name, "WARN", f"{e.code}: not ready yet", "Normal before RTCE is on (Lab 1, step 11). After that, wait 1 minute, then check again.")
         return Check(name, "FAIL", f"{e.code}: {e.message}"[:120], lq.HINTS.get(e.code, ""))
@@ -170,7 +172,7 @@ def run_checks(s: dict, cli=cli, run=lq.run_query, rest_status=kafka_rest_status
     for f in (feeds(name) if name_ok else ()):
         st = status.get(f)
         if st == "RUNNING":
-            out.append(Check(f"feed {f}", "WARN", "RUNNING", "A running feed delays every new event up to 60 s. Lab 2 step 6 stops it."))
+            out.append(Check(f"feed {f}", "WARN", "RUNNING", "Normal in Lab 1: the feed must run. It delays every new event up to 60 s. Lab 2 stops it."))
         elif st in ("FAILED", "FAILING", "DEGRADED"):
             out.append(Check(f"feed {f}", "FAIL", st,
                              f"Read the reason: confluent flink statement describe {f} --environment {env} "
@@ -213,8 +215,9 @@ def run_checks(s: dict, cli=cli, run=lq.run_query, rest_status=kafka_rest_status
 
 def report(checks: list[Check]) -> str:
     lines = []
+    width = max([32] + [len(c.name) + 1 for c in checks])
     for c in checks:
-        lines.append(f"{c.status:<4}  {c.name:<32} {c.detail}")
+        lines.append(f"{c.status:<4}  {c.name:<{width}} {c.detail}")
         if c.fix and c.status in ("FAIL", "WARN"):
             lines.append(f"      fix: {c.fix}")
     return "\n".join(lines)

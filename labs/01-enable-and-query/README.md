@@ -101,10 +101,15 @@ echo "LQ_CLUSTER_ID=$(confluent kafka cluster create "lq-$LQ_NAME-cluster" --clo
 echo "LQ_POOL_ID=$(confluent flink compute-pool create "lq-$LQ_NAME-pool" --cloud aws --region "$LQ_REGION" --max-cfu 10 --environment "$LQ_ENV_ID" -o json | jq -r .id)" >> tools/lq.env; set -a; . tools/lq.env; set +a
 ```
 
-7. Create a Global API key, and add it to `tools/lq.env`. The secret goes into the file, not onto the screen.
+7. Create a Global API key, and add it to `tools/lq.env`. The secret goes into the file, not onto the screen. A Cloud API key does not work. This is also true for a Cloud key from Terraform.
 
 ```bash
-confluent api-key create --resource global --description "Lightning Queries lab $LQ_NAME" -o json | jq -r '"LQ_API_KEY=\(.api_key)\nLQ_API_SECRET=\(.api_secret)"' >> tools/lq.env; set -a; . tools/lq.env; set +a
+confluent api-key create --resource global \
+  --description "Lightning Queries lab $LQ_NAME" \
+  -o json \
+  | jq -r '"LQ_API_KEY=\(.api_key)\nLQ_API_SECRET=\(.api_secret)"' \
+  >> tools/lq.env
+set -a; . tools/lq.env; set +a
 ```
 
 If this fails, you already have 2 Global keys. That is the limit. Use one of them: add `LQ_API_KEY` and `LQ_API_SECRET` to `tools/lq.env` by hand. The key must belong to the same org.
@@ -116,7 +121,7 @@ If this fails, you already have 2 Global keys. That is the limit. Use one of the
 python3 tools/lq_doctor.py
 ```
 
-This is the output right after step 7. I ran it on 2026-10-27. The line `name` is new since 2026-11-01.
+This is the output right after step 7. I ran it on 2026-10-27.
 
 ```
 OK    CLI login                        org My Org (a1b2c3d4-e5f6-4789-abcd-0123456789ab)
@@ -145,13 +150,13 @@ Read the first word of each line:
 - `WARN` on the line `name` means that `LQ_NAME` is still `changeme`. Change it in `tools/lq.env` now, and load the settings again. Step 9 creates the first statement with this name.
 - `FAIL` must go away before step 9. Do what the `fix:` line says, then run the doctor again.
 
-Then wait until step 5 is at least 4 minutes ago. A new cluster needs some minutes before Flink can create a table in it. This is true for a new and for an existing environment.
-
 Part B done. Next: create the topic and the feed.
 
 ### Part C: topic, feed and RTCE (about 2 minutes, then wait)
 
-9. Create the table `lq_orders`. Flink creates the topic and the value schema. The status must be `COMPLETED`.
+9. Wait first: step 5 must be at least 4 minutes ago. A new cluster needs some minutes before Flink can create a table in it. This is true for a new and for an existing environment. If you start too early, step 9 fails with "technical difficulties".
+
+   Then create the table `lq_orders`. Flink creates the topic and the value schema. The status must be `COMPLETED`.
 
 ```bash
 confluent flink statement create lq-$LQ_NAME-create-orders --sql "$(cat sql/01_create_orders.sql)" --environment "$LQ_ENV_ID" --database "$LQ_CLUSTER_ID" --compute-pool "$LQ_POOL_ID" --wait
@@ -192,6 +197,8 @@ python3 tools/lq.py "SELECT * FROM lq_orders LIMIT 5"
 If you get `FE_CUSTOMER_NOT_FOUND`, `FE_TABLE_NOT_FOUND`, `DP_TABLE_NOT_AVAILABLE` or `FE_BACKEND_UNAVAILABLE`, the table is not ready yet. Retry every 30 seconds. On 2026-10-27 the first rows came about 30 seconds after `ACTIVE`. Up to 10 minutes is normal.
 
 If you get `0 rows`, the feed has not committed yet. Flink writes in transactions and commits about once per minute. RTCE reads only committed data. Retry after one minute.
+
+After step 10, the doctor shows `WARN feed lq-$LQ_NAME-feed-orders RUNNING`. This is normal. The feed must run in Lab 1. Lab 2 stops it.
 
 If `lq.py` prints `note: this org has no Lightning Queries REST access`, it used MCP. Set `LQ_MODE=mcp` in `tools/lq.env` to skip the REST try next time.
 
@@ -270,15 +277,15 @@ QE_UNSUPPORTED_AGGREGATION
 
 ## Expected
 
-Step 13 prints rows and a time. I ran it on 2026-10-26:
+Step 13 prints rows and a time. I ran it with `LIMIT 3` on 2026-11-05:
 
 ```
 ORDER_ID                              CUSTOMER_ID  PRODUCT_ID  PRICE  STATUS  SOURCE  PRODUCED_AT
 ------------------------------------  -----------  ----------  -----  ------  ------  --------------------------
-cbc2f720-496d-4379-a92b-65334b838d1e  3123         1491        33.82  NEW     feed    2026-10-26 14:53:34.880000
-b553c9d1-9b0d-49f7-ba1a-8449fdb80e44  3048         1315        99.85  NEW     feed    2026-10-26 14:53:35.523000
-35da40ea-2870-466f-ad85-5c5356766058  3137         1424        64.81  NEW     feed    2026-10-26 14:53:35.523000
-3 rows in 0.74 s
+fb4df270-c084-4e11-ac37-3fe3119b9614  3068         1072        85.65  NEW     feed    2026-11-05 17:17:35.865+00
+5352e0e2-b43a-4c38-84f3-5c7a6e3a39b9  3089         1399        89.08  NEW     feed    2026-11-05 17:17:35.865+00
+aa58fd22-573f-4019-88c9-db5d749275d0  3040         1429        54.86  NEW     feed    2026-11-05 17:17:35.865+00
+3 rows in 0.51 s
 ```
 
 You are done with Lab 1 when `lq.py` prints rows from your table.
@@ -290,6 +297,7 @@ You are done with Lab 1 when `lq.py` prints rows from your table.
 - Column names are not case-sensitive without quotes. With quotes they must be upper case: `"ORDER_ID"` works, `"order_id"` fails with `FE_SQL_VALIDATION_ERROR`.
 - `PRODUCED_AT` is in UTC. A REST query returns all rows. `tools/lq.py` shows the first 100 in the table, and `--json` prints all. MCP returns at most 200 rows.
 - The CLI exits with 0 also when a Flink statement fails. Check the status with the first Look command, or with `python3 tools/lq_doctor.py`.
+- `confluent lightning query` prints `Table does not exist: 'lq_orders'` for a table that is not ready yet. `lq.py` shows the same case as `FE_TABLE_NOT_FOUND`. Retry in 30 seconds.
 - Never delete a topic and create it again under the same name. RTCE can keep old state for it. Use a new name.
 
 ## Clean up

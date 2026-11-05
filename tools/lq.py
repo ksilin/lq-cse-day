@@ -73,6 +73,7 @@ HINTS = {
     "QE_UNSUPPORTED_WINDOW_FUNCTION": "Not supported in Lightning Queries: window functions such as ROW_NUMBER().",
     "MT_METADATA_UPDATE": "The Lightning table is still starting (seen on new upsert tables). " + RETRY,
     "unauthenticated": "Use a Global API key (not a cluster key) of this org. Check the key and the secret.",
+    "resource_not_found": "Use a Global API key of this org. A Cloud API key does not work. Then check LQ_ENV_ID and LQ_CLUSTER_ID.",
 }
 RETRYABLE = {"FE_CUSTOMER_NOT_FOUND", "FE_BACKEND_UNAVAILABLE", "FE_TABLE_NOT_AVAILABLE",
              "DP_TABLE_NOT_AVAILABLE", "DP_INVALID_TABLE", "FE_RATE_LIMITED", "RATE_LIMIT_EXCEEDED", "query_timeout",
