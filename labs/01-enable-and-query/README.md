@@ -321,10 +321,10 @@ Keep everything if you continue with Lab 2 and Lab 3. Do this when you stop. It 
 confluent environment delete "$LQ_ENV_ID" --force
 ```
 
-1b. Keep the existing environment, and delete only your resources in it. First delete your Flink statements, also those of Lab 3. The command deletes only names with your `LQ_NAME`. It prints an error for a statement that does not exist. You can ignore that error.
+1b. Keep the existing environment, and delete only your resources in it. First delete your Flink statements, also those of Labs 2 to 4. The command deletes only names with your `LQ_NAME`. It prints an error for a statement that does not exist. You can ignore that error.
 
 ```bash
-for s in create-orders feed-orders create-orders-latest feed-orders-latest; do confluent flink statement delete "lq-$LQ_NAME-$s" --force --environment "$LQ_ENV_ID" --cloud aws --region "$LQ_REGION"; done
+for s in create-orders feed-orders marker-2 create-orders-latest feed-orders-latest upd-1 upd-2 cancel-1; do confluent flink statement delete "lq-$LQ_NAME-$s" --force --environment "$LQ_ENV_ID" --cloud aws --region "$LQ_REGION"; done
 ```
 
 Then delete the Flink pool and the cluster. The cluster delete also deletes the topic.

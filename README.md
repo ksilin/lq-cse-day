@@ -2,14 +2,13 @@
 
 In this track, you turn on the Real-Time Context Engine (RTCE) for a Kafka topic. Then you query the topic with Lightning Queries over REST, or over MCP. Later labs compare the freshness with Tableflow, and query a table with one current row per key.
 
-This repository has Lab 1 now. Labs 2 to 4 follow before 2026-11-06.
-
 ## What you will do
 
 - **Lab 1, enable and query (about 40 minutes).** Create a cluster and a Flink pool. Fill a topic with order events. Turn on RTCE. Run a Lightning query. Proof: `tools/lq.py` returns rows. Start here: [labs/01-enable-and-query/README.md](labs/01-enable-and-query/README.md).
 - **[Lab 2, freshness](labs/02-freshness/README.md).** Write a marker event. See it in Lightning Queries within seconds, while Tableflow does not have it yet.
 - **[Lab 3, upsert](labs/03-upsert/README.md).** Query a table that holds one current row per key, and time one update in Lightning Queries and in Tableflow.
-- **Lab 4, optional exercises (coming).**
+- **[Lab 4, optional exercises](labs/04-optional/README.md).** Unsupported SQL and its error codes, delete a key, a Java client, and MCP with Claude Code.
+- **[Lab UI](ui/README.md) (optional).** A local web page that shows a new event and an update arriving in Lightning Tables and in Tableflow, side by side.
 
 ## Prerequisites
 
@@ -22,6 +21,7 @@ Install and check these before the CSE Day:
 - Confluent CLI v4.81 or later, and `jq`.
 - Python 3.10 or later. The tools use only the standard library, so you install no Python packages.
 - DuckDB 1.1 or later (Lab 2).
+- Java 17 or later, only for Lab 4, exercise O3. Claude Code, only for Lab 4, exercise O4.
 
 ## Your environment
 

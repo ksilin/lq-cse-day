@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LQ UI Mockups</title>
+<style>
+:root{--bg:#f6f6f4;--card:#fff;--fg:#1b1d21;--muted:#5f6670;--border:#dcdfe3;--lq:#c2410c;--tf:#0b63a8;
+  --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+@media (prefers-color-scheme: dark){:root{--bg:#111317;--card:#1a1d23;--fg:#eceef1;--muted:#9aa3ad;--border:#2c313a;--lq:#fb923c;--tf:#5cb3f5}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:18px/1.5 var(--sans)}
+main{max-width:860px;margin:0 auto;padding:28px 16px 40px}
+h1{margin:0 0 4px;font-size:28px}
+p.lead{color:var(--muted);margin:0 0 22px}
+a.card{display:block;text-decoration:none;color:inherit;background:var(--card);border:1px solid var(--border);border-left:6px solid var(--lq);border-radius:12px;padding:16px 18px;margin-bottom:14px}
+a.card:nth-of-type(2){border-left-color:var(--tf)}
+a.card:nth-of-type(3){border-left-color:var(--fg)}
+a.card:hover{border-color:var(--fg)}
+a.card h2{margin:0 0 4px;font-size:21px}
+a.card h2 span{font-weight:400;color:var(--muted);font-size:15px}
+a.card p{margin:0;color:var(--muted)}
+footer{color:var(--muted);font-size:14px;margin-top:20px}
+</style>
+</head>
+<body>
+<main>
+  <h1>Lightning Queries lab: UI mockups</h1>
+  <p class="lead">Three static mockups for CSE Day 2026-11-06. Fake data. No backend. Compare them and select one.</p>
+
+  <a class="card" href="mockup-race.html">
+    <h2>1. Race view <span>mockup-race.html &middot; Lab 2</span></h2>
+    <p>Two lanes side by side: Lightning Tables and Tableflow. Push "Write marker". Each lane shows a stopwatch, a poll log with one dot per poll, and a large "visible after" time. Lightning stops at about 1.5 s. Tableflow keeps polling every 30 s and stops after some minutes. A list of past runs is below. Use the speed switch (1x, 10x, 60x) to make the demo shorter. The times always show lab time.</p>
+  </a>
+
+  <a class="card" href="mockup-upsert.html">
+    <h2>2. Table view <span>mockup-upsert.html &middot; Lab 3</span></h2>
+    <p>Three small live tables for key 9001: the append table lq_orders (every event adds a row), the Lightning upsert table lq_orders_latest (one row, the price cell flashes when it changes) and the Tableflow lq_orders_latest (old price with an OLD badge until it catches up). Push "Write UPD-n with price p". A timeline at the bottom shows, per write, when each table showed it. The page starts with UPD-1 and UPD-2 done, so you can write UPD-3 at once.</p>
+  </a>
+
+  <a class="card" href="mockup-dashboard.html">
+    <h2>3. Combined lab dashboard <span>mockup-dashboard.html &middot; Labs 1 to 3</span></h2>
+    <p>One page with tabs for Lab 1, Lab 2 and Lab 3, and a status bar on top like the lab doctor (Cluster, RTCE, Tableflow, Feed). Lab 1 has a SELECT box, a result grid and the query time. Lab 2 is a compact race with two bars on a 0 to 5 min axis. Lab 3 shows the current price per table as large numbers, with an event log.</p>
+  </a>
+
+  <footer>Each file opens with a double click. No network access. The real app will be a Python http.server that polls tools/lq.py every 1 s and tableflow/tableflow_query.sh every 30 s.</footer>
+</main>
+</body>
+</html>

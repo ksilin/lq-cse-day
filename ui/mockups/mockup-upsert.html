@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LQ Upsert View</title>
+<style>
+:root{
+  --bg:#f6f6f4; --card:#ffffff; --fg:#1b1d21; --muted:#5f6670; --border:#dcdfe3;
+  --lq:#c2410c; --lq-soft:#fff1e8; --tf:#0b63a8; --tf-soft:#e8f2fb;
+  --old:#b45309; --old-soft:#fdf3e1; --flash:#fde68a;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+@media (prefers-color-scheme: dark){
+  :root{--bg:#111317;--card:#1a1d23;--fg:#eceef1;--muted:#9aa3ad;--border:#2c313a;
+    --lq:#fb923c;--lq-soft:#2a1d14;--tf:#5cb3f5;--tf-soft:#13222f;--old:#fbbf24;--old-soft:#2b2410;--flash:#7c5a06;}
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:18px/1.4 var(--sans)}
+main{max-width:1280px;margin:0 auto;padding:20px 16px 40px}
+header{display:flex;flex-wrap:wrap;gap:12px 24px;align-items:flex-end;justify-content:space-between;margin-bottom:16px}
+h1{font-size:26px;margin:0}
+h1 small{display:block;font-size:15px;font-weight:400;color:var(--muted)}
+.bar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:18px}
+.write{border:2px solid var(--fg);border-radius:10px;background:var(--fg);color:var(--bg);font:700 17px var(--sans);padding:10px 16px;cursor:pointer}
+.write:disabled{background:transparent;color:var(--muted);border-color:var(--border);cursor:default}
+.write b{font-family:var(--mono)}
+.ghost{border:1px solid var(--border);border-radius:8px;background:var(--card);color:var(--fg);font:15px var(--sans);padding:8px 12px;cursor:pointer}
+.spacer{flex:1}
+.seg{display:inline-flex;border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.seg button{border:0;background:var(--card);color:var(--fg);font:600 16px var(--sans);padding:8px 14px;cursor:pointer}
+.seg button[aria-pressed=true]{background:var(--fg);color:var(--bg)}
+.clock{font:600 16px var(--mono);color:var(--muted)}
+.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+@media (max-width:980px){.grid{grid-template-columns:1fr}}
+.card{background:var(--card);border:1px solid var(--border);border-top:6px solid var(--c);border-radius:12px;padding:14px 16px;min-width:0}
+.card.lq{--c:var(--lq);--soft:var(--lq-soft)}
+.card.tf{--c:var(--tf);--soft:var(--tf-soft)}
+.card h2{margin:0;font-size:20px;color:var(--c)}
+.card .what{font-size:14px;color:var(--muted);margin:2px 0 8px}
+.q{font:13px var(--mono);color:var(--muted);background:var(--soft);padding:4px 8px;border-radius:6px;overflow-wrap:anywhere}
+table{width:100%;border-collapse:collapse;margin-top:10px;font:16px var(--mono);table-layout:fixed}
+th{font:600 12px var(--sans);letter-spacing:.04em;color:var(--muted);text-align:left;padding:4px 6px;border-bottom:1px solid var(--border);overflow:hidden;text-overflow:ellipsis}
+td{padding:6px;border-bottom:1px solid var(--border);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+td.price{font-weight:800;font-size:22px}
+tr.newrow td{animation:flash 1.6s}
+td.flash{animation:flash 2.2s}
+@keyframes flash{from{background:var(--flash)}to{background:transparent}}
+.empty td{color:var(--muted);font-family:var(--sans);font-size:15px;white-space:normal}
+.foot{display:flex;justify-content:space-between;gap:8px;margin-top:8px;font-size:14px;color:var(--muted);min-height:24px;flex-wrap:wrap}
+.badge{font:800 12px var(--sans);letter-spacing:.06em;padding:2px 8px;border-radius:99px;vertical-align:middle}
+.badge.old{background:var(--old);color:var(--card)}
+.badge.ok{border:1px solid var(--c);color:var(--c)}
+.big{font:800 46px/1 var(--sans);color:var(--c);margin-top:10px}
+.big.stale{color:var(--old)}
+.tl{margin-top:22px;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 16px}
+.tl h3{margin:0 0 4px;font-size:18px}
+.legend{display:flex;flex-wrap:wrap;gap:14px;font-size:14px;color:var(--muted);margin-bottom:8px}
+.legend i{display:inline-block;width:12px;height:12px;border-radius:50%;vertical-align:-1px;margin-right:5px}
+.trow{display:grid;grid-template-columns:120px minmax(0,1fr);gap:10px;align-items:center;padding:10px 0;border-top:1px solid var(--border)}
+.trow .name{font:700 16px var(--mono)}
+.trow .name small{display:block;font:13px var(--sans);color:var(--muted)}
+.track{position:relative;height:50px;margin:0 10px}
+.track .line{position:absolute;left:0;right:0;top:14px;height:2px;background:var(--border)}
+.track .now{position:absolute;top:6px;width:2px;height:18px;background:var(--muted)}
+.dot{position:absolute;top:7px;width:16px;height:16px;margin-left:-8px;border-radius:50%;border:3px solid var(--card)}
+.dot.w{background:var(--fg)} .dot.a{background:var(--lq);opacity:.55} .dot.u{background:var(--lq)} .dot.t{background:var(--tf)}
+.lab{position:absolute;top:28px;font:12px var(--sans);color:var(--muted);white-space:nowrap;transform:translateX(-50%)}
+.lab.t{color:var(--tf);font-weight:700} .lab.u{color:var(--lq);font-weight:700}
+.axis{display:flex;justify-content:space-between;font:12px var(--mono);color:var(--muted);margin-left:130px}
+footer{margin-top:18px;color:var(--muted);font-size:13px}
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Lab 3 &middot; Upsert<small>One key: CUSTOMER_ID 9001. Write a new price. See which table shows it, and when.</small></h1>
+    <div class="clock" id="clock"></div>
+  </header>
+
+  <div class="bar">
+    <button class="write" data-n="1">Write UPD-1 with price <b>10</b></button>
+    <button class="write" data-n="2">Write UPD-2 with price <b>20</b></button>
+    <button class="write" data-n="3">Write UPD-3 with price <b>30</b></button>
+    <span class="spacer"></span>
+    <button class="ghost" id="reset-empty">Reset: empty</button>
+    <button class="ghost" id="reset-pre">Reset: UPD-1, UPD-2 done</button>
+    <div class="seg" id="speed"></div>
+  </div>
+
+  <div class="grid">
+    <div class="card lq">
+      <h2>lq_orders</h2>
+      <div class="what">Lightning &middot; append table &middot; every event is a row</div>
+      <div class="q">WHERE CUSTOMER_ID = 9001</div>
+      <table><colgroup><col style="width:27%"><col style="width:31%"><col></colgroup>
+        <thead><tr><th>ORDER_ID</th><th>PRICE</th><th>PRODUCED_AT</th></tr></thead>
+        <tbody id="t-app"></tbody></table>
+      <div class="foot"><span id="f-app"></span><span>poll 1 s</span></div>
+    </div>
+    <div class="card lq">
+      <h2>lq_orders_latest</h2>
+      <div class="what">Lightning &middot; upsert table &middot; one row per key</div>
+      <div class="q">WHERE CUSTOMER_ID = 9001</div>
+      <table><colgroup><col style="width:27%"><col style="width:31%"><col></colgroup>
+        <thead><tr><th>ORDER_ID</th><th>PRICE</th><th>PRODUCED_AT</th></tr></thead>
+        <tbody id="t-ups"></tbody></table>
+      <div class="foot"><span id="f-ups"></span><span>poll 1 s &middot; Flink commit ~60 s</span></div>
+    </div>
+    <div class="card tf">
+      <h2>lq_orders_latest</h2>
+      <div class="what">Tableflow &middot; Iceberg via DuckDB &middot; one row per key</div>
+      <div class="q">WHERE CUSTOMER_ID = 9001</div>
+      <table><colgroup><col style="width:27%"><col style="width:31%"><col></colgroup>
+        <thead><tr><th>ORDER_ID</th><th>PRICE</th><th>PRODUCED_AT</th></tr></thead>
+        <tbody id="t-tf"></tbody></table>
+      <div class="foot"><span id="f-tf"></span><span id="f-tf-poll">poll 30 s</span></div>
+    </div>
+  </div>
+
+  <div class="tl">
+    <h3>Timeline per write</h3>
+    <div class="legend">
+      <span><i style="background:var(--fg)"></i>written</span>
+      <span><i style="background:var(--lq);opacity:.55"></i>visible in append</span>
+      <span><i style="background:var(--lq)"></i>visible in upsert</span>
+      <span><i style="background:var(--tf)"></i>visible in Tableflow</span>
+    </div>
+    <div class="axis"><span>0</span><span>1 min</span><span>2 min</span><span>3 min</span><span>4 min</span><span>5 min</span></div>
+    <div id="tl"></div>
+  </div>
+  <footer>Mockup. Fake data. Topic lq_orders_latest is compacted. The real app polls tools/lq.py every 1 s and tableflow/tableflow_query.sh every 30 s.</footer>
+</main>
+<script>
+(function(){
+  'use strict';
+  var SPEEDS = [1, 10, 60], speed = 10;
+  var BASE = Date.UTC(2026, 10, 5, 17, 17, 35, 865);
+  var PRICES = {1: 10, 2: 20, 3: 30};
+  var AXIS = 300; // seconds on the timeline
+  var sim = 0, tfPhase = 0, writes = [];
+  var shown = {app: '', ups: '', tf: ''};
+
+  function p2(n, w){ n = String(n); while (n.length < (w || 2)) n = '0' + n; return n; }
+  function hms(sec){ var d = new Date(BASE + sec * 1000); return p2(d.getUTCHours()) + ':' + p2(d.getUTCMinutes()) + ':' + p2(d.getUTCSeconds()) + '.' + p2(d.getUTCMilliseconds(), 3); }
+  function fmt(s){
+    if (s < 60) return s.toFixed(1) + ' s';
+    var t = Math.round(s), m = Math.floor(t / 60), r = t % 60;
+    return m + ' min ' + p2(r) + ' s';
+  }
+  function lqPoll(){ return Math.floor(sim); }
+  function tfPoll(){ return tfPhase + Math.floor((sim - tfPhase) / 30) * 30; }
+  function ceilTo(t, phase, period){ return phase + Math.ceil((t - phase) / period) * period; }
+
+  function write(n, at){
+    var prev = writes[writes.length - 1];
+    var w = {n: n, id: 'UPD-' + n, price: PRICES[n], t: at};
+    w.appVis = at + 0.8 + Math.random() * 1.5;
+    w.upsVis = Math.max(at + 50 + Math.random() * 40, prev ? prev.upsVis : -Infinity);
+    w.tfVis = Math.max(at + (n === 3 ? 200 : 60 + Math.random() * 180), prev ? prev.tfVis : -Infinity);
+    // detection times = first poll at or after the visible time
+    w.appSeen = Math.ceil(w.appVis);
+    w.upsSeen = Math.ceil(w.upsVis);
+    w.tfSeen = ceilTo(w.tfVis, tfPhase, 30);
+    writes.push(w);
+    document.querySelector('.write[data-n="' + n + '"]').disabled = true;
+  }
+
+  function reset(pre){
+    writes = []; shown = {app: '', ups: '', tf: ''};
+    tfPhase = sim - 30 + Math.random() * 30;
+    Array.prototype.forEach.call(document.querySelectorAll('.write'), function(b){ b.disabled = false; });
+    if (pre){ write(1, sim - 720); write(2, sim - 480); }
+    render(true);
+  }
+
+  function rowsHtml(list, newestId, cls){
+    if (!list.length) return '<tr class="empty"><td colspan="3">No row for 9001 yet.</td></tr>';
+    return list.map(function(w){
+      var isNew = w.id === newestId && cls;
+      return '<tr' + (isNew === 'row' ? ' class="newrow"' : '') + '><td>' + w.id + '</td><td class="price' + (isNew === 'cell' ? ' flash' : '') + '">' + w.price + '</td><td>' + hms(w.t) + '</td></tr>';
+    }).join('');
+  }
+
+  function render(force){
+    var lp = lqPoll(), tp = tfPoll();
+    var latest = writes[writes.length - 1];
+
+    // append: every event visible at last poll
+    var app = writes.filter(function(w){ return w.appSeen <= lp; });
+    var appKey = app.map(function(w){ return w.id; }).join(',');
+    if (force || appKey !== shown.app){
+      var grew = appKey.length > shown.app.length && !force;
+      document.getElementById('t-app').innerHTML = rowsHtml(app, app.length ? app[app.length - 1].id : '', grew ? 'row' : '');
+      shown.app = appKey;
+    }
+    document.getElementById('f-app').textContent = app.length + (app.length === 1 ? ' row' : ' rows') + ' for 9001';
+
+    // upsert: latest committed write
+    var ups = writes.filter(function(w){ return w.upsSeen <= lp; }).pop();
+    var upsKey = ups ? ups.id : '';
+    if (force || upsKey !== shown.ups){
+      document.getElementById('t-ups').innerHTML = rowsHtml(ups ? [ups] : [], upsKey, (!force && shown.ups) ? 'cell' : (!force ? 'row' : ''));
+      shown.ups = upsKey;
+    }
+    footState('f-ups', ups, latest, lp, 'Next commit in ~');
+
+    // tableflow: latest write in last snapshot read
+    var tf = writes.filter(function(w){ return w.tfSeen <= tp; }).pop();
+    var tfKey = tf ? tf.id : '';
+    var tfStale = tf && latest && tf.id !== latest.id;
+    var tfShownKey = tfKey + (tfStale ? '!' : '');
+    if (force || tfShownKey !== shown.tf){
+      var html = rowsHtml(tf ? [tf] : [], tfKey, (!force && shown.tf && tfKey !== shown.tf.replace('!', '')) ? 'cell' : '');
+      if (tfStale) html = html.replace('</td><td>' + hms(tf.t), ' <span class="badge old">OLD</span></td><td>' + hms(tf.t));
+      document.getElementById('t-tf').innerHTML = html;
+      shown.tf = tfShownKey;
+    }
+    footState('f-tf', tf, latest, tp, null);
+    document.getElementById('f-tf-poll').textContent = 'poll 30 s · next in ' + Math.ceil(tp + 30 - sim) + ' s';
+
+    renderTimeline();
+    document.getElementById('clock').textContent = 'Lab clock ' + hms(sim).slice(0, 8) + ' UTC';
+  }
+
+  function footState(id, cur, latest, pollT, _){
+    var el = document.getElementById(id);
+    if (!latest){ el.textContent = ''; return; }
+    if (cur && cur.id === latest.id){ el.innerHTML = '<span class="badge ok">CURRENT</span> price ' + cur.price; return; }
+    el.innerHTML = '<span class="badge old">OLD</span> ' + latest.id + ' written ' + fmt(sim - latest.t) + ' ago';
+  }
+
+  function pct(s){ return Math.min(100, Math.max(0, s / AXIS * 100)); }
+  function renderTimeline(){
+    var box = document.getElementById('tl');
+    if (!writes.length){ box.innerHTML = '<div class="trow"><div class="name">&ndash;</div><div style="color:var(--muted);font-size:15px">Write an update to start.</div></div>'; return; }
+    box.innerHTML = writes.slice().reverse().map(function(w){
+      var e = sim - w.t, parts = [], labs = [];
+      function mark(cls, at, text){
+        if (at - w.t > e) return;
+        parts.push('<span class="dot ' + cls + '" style="left:' + pct(at - w.t) + '%"></span>');
+        if (text) labs.push('<span class="lab ' + cls + '" style="left:' + Math.min(90, Math.max(8, pct(at - w.t))) + '%">' + text + '</span>');
+      }
+      mark('w', w.t, '');
+      mark('a', w.appSeen, '');
+      mark('u', w.upsSeen, 'upsert ' + fmt(w.upsSeen - w.t));
+      mark('t', w.tfSeen, 'Tableflow ' + fmt(w.tfSeen - w.t));
+      var now = e < AXIS && e < (w.tfSeen - w.t) ? '<span class="now" style="left:' + pct(e) + '%"></span>' : '';
+      return '<div class="trow"><div class="name">' + w.id + '<small>price ' + w.price + ' &middot; append ' + fmt(w.appSeen - w.t) + '</small></div>' +
+        '<div class="track"><span class="line"></span>' + now + parts.join('') + labs.join('') + '</div></div>';
+    }).join('');
+  }
+
+  // wiring
+  Array.prototype.forEach.call(document.querySelectorAll('.write'), function(b){
+    b.onclick = function(){ write(+b.getAttribute('data-n'), sim); render(false); };
+  });
+  document.getElementById('reset-empty').onclick = function(){ reset(false); };
+  document.getElementById('reset-pre').onclick = function(){ reset(true); };
+  var segEl = document.getElementById('speed');
+  SPEEDS.forEach(function(s){
+    var b = document.createElement('button');
+    b.textContent = s + 'x';
+    b.setAttribute('aria-pressed', s === speed);
+    b.onclick = function(){ speed = s; Array.prototype.forEach.call(segEl.children, function(c){ c.setAttribute('aria-pressed', c === b); }); };
+    segEl.appendChild(b);
+  });
+
+  reset(true);
+  var last = performance.now();
+  setInterval(function(){
+    var now = performance.now();
+    sim += (now - last) / 1000 * speed;
+    last = now;
+    render(false);
+  }, 100);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,499 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="lab-token" content="__LAB_TOKEN__">
+<title>LQ Lab Dashboard</title>
+<style>
+:root{
+  --bg:#f6f6f4; --card:#ffffff; --fg:#1b1d21; --muted:#5f6670; --border:#dcdfe3;
+  --lq:#c2410c; --lq-soft:#fff1e8; --tf:#0b63a8; --tf-soft:#e8f2fb;
+  --ok:#15803d; --ok-soft:#e6f4ea; --warn:#b45309; --warn-soft:#fdf3e1; --bad:#b91c1c; --bad-soft:#fdecec; --flash:#fde68a;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+@media (prefers-color-scheme: dark){
+  :root{--bg:#111317;--card:#1a1d23;--fg:#eceef1;--muted:#9aa3ad;--border:#2c313a;
+    --lq:#fb923c;--lq-soft:#2a1d14;--tf:#5cb3f5;--tf-soft:#13222f;
+    --ok:#4ade80;--ok-soft:#12261a;--warn:#fbbf24;--warn-soft:#2b2410;--bad:#f87171;--bad-soft:#2d1618;--flash:#7c5a06;}
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:18px/1.4 var(--sans)}
+.status{position:sticky;top:0;z-index:2;background:var(--card);border-bottom:1px solid var(--border)}
+.status-in{max-width:1200px;margin:0 auto;padding:10px 16px;display:flex;flex-wrap:wrap;gap:8px 10px;align-items:center}
+.brand{font-weight:800;font-size:18px;margin-right:8px}
+.chk{display:inline-flex;gap:6px;align-items:center;border-radius:8px;padding:4px 10px;font-size:15px;background:var(--s-soft,transparent);border:1px solid var(--border);cursor:pointer}
+.chk b{font:800 13px var(--sans);letter-spacing:.05em;color:var(--s,var(--muted))}
+.chk.OK{--s:var(--ok);--s-soft:var(--ok-soft)}
+.chk.WARN{--s:var(--warn);--s-soft:var(--warn-soft)}
+.chk.FAIL{--s:var(--bad);--s-soft:var(--bad-soft)}
+.chk small{color:var(--muted);font-size:13px}
+.status .right{margin-left:auto;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.when{font-size:13px;color:var(--muted)}
+.ghost{border:1px solid var(--border);border-radius:8px;background:var(--card);color:var(--fg);font:15px var(--sans);padding:6px 12px;cursor:pointer}
+.ghost:disabled{opacity:.45;cursor:default}
+.checks{max-width:1200px;margin:0 auto;padding:0 16px 10px;font:14px/1.5 var(--mono)}
+.checks[hidden]{display:none}
+.checks div{display:flex;gap:10px;flex-wrap:wrap}
+.checks .fix{color:var(--muted);padding-left:56px}
+.checks .OK b{color:var(--ok)} .checks .WARN b{color:var(--warn)} .checks .FAIL b{color:var(--bad)} .checks .SKIP b{color:var(--muted)}
+main{max-width:1200px;margin:0 auto;padding:16px 16px 40px}
+.tabs{display:flex;gap:4px;border-bottom:2px solid var(--border);margin-bottom:18px;overflow-x:auto}
+.tabs button{border:0;background:none;color:var(--muted);font:700 19px var(--sans);padding:10px 18px;cursor:pointer;border-bottom:4px solid transparent;margin-bottom:-2px;white-space:nowrap}
+.tabs button[aria-selected=true]{color:var(--fg);border-bottom-color:var(--fg)}
+.tabs button small{display:block;font-weight:400;font-size:13px}
+.panel[hidden]{display:none}
+.go{border:0;border-radius:10px;background:var(--fg);color:var(--bg);font:700 18px var(--sans);padding:10px 20px;cursor:pointer}
+.go:disabled{opacity:.45;cursor:default}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.hint{color:var(--muted);font-size:15px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 16px}
+.banner{margin:12px 0 0;padding:10px 14px;border-radius:10px;background:var(--bg);border:1px solid var(--border);font-size:16px}
+.banner[hidden]{display:none}
+.banner b{font:800 13px var(--sans);letter-spacing:.05em;margin-right:8px}
+.banner.FAILED,.banner.INTERRUPTED{background:var(--bad-soft)} .banner.FAILED b,.banner.INTERRUPTED b{color:var(--bad)}
+.banner.UNKNOWN,.banner.TIMEOUT{background:var(--warn-soft)} .banner.UNKNOWN b,.banner.TIMEOUT b{color:var(--warn)}
+.banner.DONE{background:var(--ok-soft)} .banner.DONE b{color:var(--ok)}
+.err{margin-top:8px;padding:8px 12px;border-radius:8px;background:var(--bad-soft);font-size:15px}
+.err[hidden]{display:none}
+.err code{font:700 14px var(--mono);color:var(--bad)}
+/* lab 1 */
+.presets{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px}
+.presets button{border:1px solid var(--border);background:var(--card);color:var(--fg);border-radius:99px;padding:5px 12px;font:14px var(--sans);cursor:pointer}
+textarea{width:100%;min-height:92px;resize:vertical;font:17px/1.4 var(--mono);color:var(--fg);background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px 12px}
+.meta{display:flex;align-items:baseline;gap:14px;margin:14px 0 6px;flex-wrap:wrap}
+.meta .t{font:800 34px var(--sans);color:var(--lq)}
+.gridwrap{overflow:auto;max-height:520px;border:1px solid var(--border);border-radius:8px;max-width:100%}
+table.res{border-collapse:collapse;width:100%;font:14px var(--mono)}
+table.res th{position:sticky;top:0;background:var(--lq-soft);text-align:left;font:700 12px var(--sans);letter-spacing:.04em;padding:6px 10px;white-space:nowrap}
+table.res td{padding:5px 10px;border-top:1px solid var(--border);white-space:nowrap}
+/* lab 2: the race view */
+.lanes{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:14px}
+@media (max-width:760px){.lanes{grid-template-columns:1fr}}
+.lane{background:var(--card);border:1px solid var(--border);border-top:6px solid var(--c);border-radius:12px;padding:18px 20px;min-width:0}
+.lane.lq{--c:var(--lq);--soft:var(--lq-soft)}
+.lane.tf{--c:var(--tf);--soft:var(--tf-soft)}
+.lane-head{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+.lane h2{margin:0;font-size:24px;color:var(--c)}
+.lane .sub{color:var(--muted);font-size:15px}
+.pill{font:700 13px var(--sans);letter-spacing:.05em;padding:4px 10px;border-radius:99px;border:1px solid var(--border);color:var(--muted);white-space:nowrap}
+.pill.polling{color:var(--c);border-color:var(--c)}
+.pill.found{background:var(--c);color:var(--card);border-color:var(--c)}
+.pill.timeout,.pill.error{background:var(--bad);color:var(--card);border-color:var(--bad)}
+.watch{font:700 64px/1.1 var(--mono);margin:14px 0 2px;font-variant-numeric:tabular-nums}
+@media (max-width:420px){.watch{font-size:48px}}
+.next{color:var(--muted);font-size:15px;min-height:21px}
+.next.slow{color:var(--warn);font-weight:700}
+.log-label{margin-top:14px;font-size:14px;color:var(--muted)}
+.log{font:20px/1.2 var(--mono);color:var(--c);background:var(--soft);border-radius:8px;padding:8px 10px;min-height:44px;max-height:96px;overflow:hidden;word-break:break-all}
+.result{margin-top:14px;padding:12px 14px;border-radius:10px;background:var(--soft);min-height:84px}
+.result .lbl{font-size:15px;color:var(--muted)}
+.result .val{font:800 40px/1.15 var(--sans);color:var(--c)}
+.result .rw{font:14px var(--mono);color:var(--muted);overflow-wrap:anywhere}
+.gap{margin:18px 0 0;text-align:center;font-size:22px;min-height:32px}
+.gap b{font-size:28px}
+section.hist{margin-top:22px}
+section.hist h3{font-size:18px;margin:0 0 8px}
+ol.h{list-style:none;margin:0;padding:0;border:1px solid var(--border);border-radius:10px;background:var(--card)}
+ol.h li{display:flex;flex-wrap:wrap;gap:4px 18px;padding:10px 14px;border-top:1px solid var(--border);font-size:16px}
+ol.h li:first-child{border-top:0}
+ol.h .id{font:14px var(--mono);color:var(--muted);min-width:230px}
+ol.h .st{font:800 12px var(--sans);letter-spacing:.05em;color:var(--muted);min-width:96px}
+ol.h .empty{color:var(--muted)}
+/* lab 3 */
+.tiles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:14px}
+@media (max-width:760px){.tiles{grid-template-columns:1fr}}
+.tile{background:var(--card);border:1px solid var(--border);border-left:6px solid var(--c);border-radius:12px;padding:12px 14px;min-width:0}
+.tile.lq{--c:var(--lq)} .tile.tf{--c:var(--tf)}
+.tile h3{margin:0;font-size:16px;color:var(--c)}
+.tile .sub{font-size:13px;color:var(--muted)}
+.tile .v{font:800 52px/1.1 var(--sans);margin-top:6px;border-radius:8px}
+.tile .v.flash{animation:flash 2s}
+.tile .tm{font:700 22px var(--mono);color:var(--c);margin-top:4px;font-variant-numeric:tabular-nums}
+.tile .chips{font:14px var(--sans);margin-top:6px;min-height:22px;color:var(--muted)}
+.badge{font:800 12px var(--sans);letter-spacing:.06em;padding:2px 8px;border-radius:99px;vertical-align:middle;margin-right:6px}
+.badge.old{background:var(--warn);color:var(--card)}
+.badge.cur{border:1px solid var(--c);color:var(--c)}
+.badge.bad{background:var(--bad);color:var(--card)}
+@keyframes flash{from{background:var(--flash)}to{background:transparent}}
+footer{margin-top:24px;color:var(--muted);font-size:13px}
+</style>
+</head>
+<body>
+<div class="status"><div class="status-in">
+  <span class="brand">Lightning Queries lab</span>
+  <span class="chk" id="c-cluster" title="Push to show all checks"><b>&hellip;</b> Cluster</span>
+  <span class="chk" id="c-rtce" title="Push to show all checks"><b>&hellip;</b> RTCE</span>
+  <span class="chk" id="c-tf" title="Push to show all checks"><b>&hellip;</b> Tableflow</span>
+  <span class="chk" id="c-feed" title="Push to show all checks"><b>&hellip;</b> Feed</span>
+  <span class="right">
+    <span class="when" id="when">Doctor not run yet.</span>
+    <button class="ghost" id="doctor">Run doctor</button>
+  </span>
+</div>
+<div class="checks" id="checks" hidden></div>
+</div>
+
+<main>
+  <div class="err" id="conn" hidden></div>
+  <div class="tabs" role="tablist">
+    <button role="tab" data-tab="1" aria-selected="true">Lab 1<small>Enable and query</small></button>
+    <button role="tab" data-tab="2" aria-selected="false">Lab 2<small>Freshness</small></button>
+    <button role="tab" data-tab="3" aria-selected="false">Lab 3<small>Upsert</small></button>
+  </div>
+
+  <!-- LAB 1 -->
+  <section class="panel" data-panel="1">
+    <div class="card">
+      <div class="presets" id="presets"></div>
+      <textarea id="sql" spellcheck="false" aria-label="SQL"></textarea>
+      <div class="row" style="margin-top:10px">
+        <button class="go" id="run">Run query</button>
+        <span class="hint">Lightning Tables only &middot; SELECT, SHOW or DESCRIBE &middot; tools/lq.py &middot; at most 500 rows</span>
+      </div>
+      <div class="meta"><span class="t" id="q-time">&ndash;</span><span class="hint" id="q-info">Push "Run query".</span></div>
+      <div class="err" id="q-err" hidden></div>
+      <div class="gridwrap"><table class="res" id="res"></table></div>
+    </div>
+  </section>
+
+  <!-- LAB 2 -->
+  <section class="panel" data-panel="2" hidden>
+    <div class="card">
+      <div class="row">
+        <button class="go" id="mark" data-lab="2">Write marker</button>
+        <button class="ghost" id="copy2" disabled>Copy result</button>
+        <span class="hint" id="mark-info">Writes one marker event to lq_orders. Then two stopwatches count until each table shows it.</span>
+      </div>
+      <div class="banner" id="b2" hidden></div>
+      <div class="lanes">
+        <div class="lane lq" id="lane-lq">
+          <div class="lane-head">
+            <div><h2>Lightning Tables</h2><div class="sub">RTCE &middot; lq_orders &middot; poll every 1 s &middot; limit 3 min</div></div>
+            <span class="pill" data-k="pill">IDLE</span>
+          </div>
+          <div class="watch" data-k="watch">0:00.0</div>
+          <div class="next" data-k="next">&nbsp;</div>
+          <div class="log-label">Poll log (. = not found, r = not ready, n = no answer, ! = found)</div>
+          <div class="log" data-k="log"></div>
+          <div class="result"><div class="lbl">Visible after</div><div class="val" data-k="val">&ndash;</div><div class="rw" data-k="row"></div></div>
+          <div class="err" data-k="err" hidden></div>
+        </div>
+        <div class="lane tf" id="lane-tf">
+          <div class="lane-head">
+            <div><h2>Tableflow</h2><div class="sub">Iceberg &middot; DuckDB &middot; lq_orders &middot; poll every 30 s &middot; limit 10 min</div></div>
+            <span class="pill" data-k="pill">IDLE</span>
+          </div>
+          <div class="watch" data-k="watch">0:00.0</div>
+          <div class="next" data-k="next">&nbsp;</div>
+          <div class="log-label">Poll log (. = not found, n = no answer, ! = found)</div>
+          <div class="log" data-k="log"></div>
+          <div class="result"><div class="lbl">Visible after</div><div class="val" data-k="val">&ndash;</div><div class="rw" data-k="row"></div></div>
+          <div class="err" data-k="err" hidden></div>
+        </div>
+      </div>
+      <div class="gap" id="gap"></div>
+      <section class="hist"><h3>Past Lab 2 runs</h3><ol class="h" id="hist2"></ol></section>
+    </div>
+  </section>
+
+  <!-- LAB 3 -->
+  <section class="panel" data-panel="3" hidden>
+    <div class="card">
+      <div class="row">
+        <button class="go" id="upd" data-lab="3">Write update</button>
+        <button class="ghost" id="copy3" disabled>Copy result</button>
+        <span class="hint" id="upd-info">Writes one order for customer 9001. The price goes up by 10 for each run.</span>
+      </div>
+      <div class="banner" id="b3" hidden></div>
+      <div class="hint" style="margin-top:10px">Key 9001. The price that each table shows now:</div>
+      <div class="tiles">
+        <div class="tile lq" id="tile-app"><h3>lq_orders</h3><div class="sub">Lightning append &middot; all events &middot; poll 1 s</div><div class="v" data-k="v">&ndash;</div><div class="tm" data-k="tm">&nbsp;</div><div class="chips" data-k="chips"></div></div>
+        <div class="tile lq" id="tile-ups"><h3>lq_orders_latest</h3><div class="sub">Lightning upsert &middot; one row per key &middot; poll 1 s</div><div class="v" data-k="v">&ndash;</div><div class="tm" data-k="tm">&nbsp;</div><div class="chips" data-k="chips"></div></div>
+        <div class="tile tf" id="tile-tf"><h3>lq_orders_latest</h3><div class="sub">Tableflow &middot; Iceberg / DuckDB &middot; poll 30 s</div><div class="v" data-k="v">&ndash;</div><div class="tm" data-k="tm">&nbsp;</div><div class="chips" data-k="chips"></div></div>
+      </div>
+      <section class="hist"><h3>Past Lab 3 runs</h3><ol class="h" id="hist3"></ol></section>
+    </div>
+  </section>
+  <footer>Local server on 127.0.0.1. The page asks the server once per second. Times count from the end of the write.</footer>
+</main>
+
+<script>
+(function(){
+  'use strict';
+  var TOKEN = document.querySelector('meta[name=lab-token]').content;
+  var state = null, fetchedAt = 0, busy = false;
+  function $(id){ return document.getElementById(id); }
+  function p2(n){ return (n < 10 ? '0' : '') + n; }
+  function fmt(s){
+    if (s === null || s === undefined) return '–';
+    if (s < 60) return s.toFixed(1) + ' s';
+    var t = Math.round(s); return Math.floor(t / 60) + ' min ' + p2(t % 60) + ' s';
+  }
+  function watch(s){
+    if (s === null || s === undefined) return '0:00.0';
+    var m = Math.floor(s / 60), r = s - m * 60;
+    return m + ':' + (r < 10 ? '0' : '') + r.toFixed(1);
+  }
+  function text(el, t){ el.textContent = t; }
+  function api(method, path, body){
+    var o = {method: method, headers: {'X-Lab-Token': TOKEN}};
+    if (body !== undefined){ o.headers['Content-Type'] = 'application/json'; o.body = JSON.stringify(body); }
+    return fetch(path, o).then(function(r){
+      return r.json().then(function(d){ d._status = r.status; return d; });
+    });
+  }
+  function parts(id){
+    var el = $(id), o = {root: el};
+    Array.prototype.forEach.call(el.querySelectorAll('[data-k]'), function(n){ o[n.getAttribute('data-k')] = n; });
+    return o;
+  }
+
+  /* ---------- tabs ---------- */
+  var tabs = document.querySelectorAll('[role=tab]');
+  function showTab(n){
+    Array.prototype.forEach.call(tabs, function(o){ o.setAttribute('aria-selected', o.getAttribute('data-tab') === n); });
+    Array.prototype.forEach.call(document.querySelectorAll('.panel'), function(p){ p.hidden = p.getAttribute('data-panel') !== n; });
+    try { localStorage.setItem('lq-tab', n); } catch (e) {}
+  }
+  Array.prototype.forEach.call(tabs, function(t){ t.onclick = function(){ showTab(t.getAttribute('data-tab')); }; });
+  try { var saved = localStorage.getItem('lq-tab'); if (saved) showTab(saved); } catch (e) {}
+
+  /* ---------- status bar ---------- */
+  var RANK = {FAIL: 3, WARN: 2, SKIP: 1, OK: 0};
+  function chip(id, label, list){
+    var el = $(id); el.textContent = '';
+    if (!list.length){ el.className = 'chk'; var b0 = document.createElement('b'); b0.textContent = '…'; el.appendChild(b0); el.appendChild(document.createTextNode(' ' + label)); return; }
+    var worst = list.reduce(function(a, c){ return RANK[c.status] > RANK[a.status] ? c : a; }, list[0]);
+    el.className = 'chk ' + worst.status;
+    var b = document.createElement('b'); b.textContent = worst.status; el.appendChild(b);
+    el.appendChild(document.createTextNode(' ' + label + ' '));
+    var sm = document.createElement('small');
+    var seen = {}, uniq = list.map(function(c){ return c.detail; }).filter(function(d){ if (seen[d]) return false; seen[d] = 1; return true; });
+    sm.textContent = (list.length > 1 && uniq.length === 1 ? list.length + ' tables ' : '') + uniq.join(' · ').slice(0, 60);
+    el.appendChild(sm);
+  }
+  function renderDoctor(d, name){
+    var checks = d.checks || [];
+    function pick(f){ return checks.filter(function(c){ return f(c.name); }); }
+    chip('c-cluster', 'Cluster', pick(function(n){ return n === 'cluster'; }));
+    chip('c-rtce', 'RTCE', pick(function(n){ return n.indexOf('RTCE ') === 0; }));
+    chip('c-tf', 'Tableflow', pick(function(n){ return n.indexOf('Tableflow ') === 0; }));
+    chip('c-feed', 'Feed', pick(function(n){ return n === 'feed lq-' + name + '-feed-orders'; }));
+    $('doctor').disabled = !!d.running;
+    text($('when'), d.running ? 'Doctor runs… (about 20 s)' : (d.at ? 'Checked ' + d.at : 'Doctor not run yet.'));
+    var box = $('checks'); box.textContent = '';
+    checks.forEach(function(c){
+      var row = document.createElement('div'); row.className = c.status;
+      var b = document.createElement('b'); b.textContent = (c.status + '    ').slice(0, 4);
+      var n = document.createElement('span'); n.textContent = c.name;
+      var det = document.createElement('span'); det.textContent = c.detail;
+      row.appendChild(b); row.appendChild(n); row.appendChild(det); box.appendChild(row);
+      if (c.fix && (c.status === 'FAIL' || c.status === 'WARN')){
+        var f = document.createElement('div'); f.className = 'fix'; f.textContent = 'fix: ' + c.fix; box.appendChild(f);
+      }
+    });
+  }
+  Array.prototype.forEach.call(document.querySelectorAll('.chk'), function(c){
+    c.onclick = function(){ $('checks').hidden = !$('checks').hidden; };
+  });
+  $('doctor').onclick = function(){ $('doctor').disabled = true; api('POST', '/api/doctor', {}).then(poll); };
+
+  /* ---------- lab 1 ---------- */
+  var PRESETS = [
+    {name: 'Show tables', sql: 'SHOW TABLES'},
+    {name: 'Last 10 orders', sql: 'SELECT ORDER_ID, CUSTOMER_ID, PRICE, STATUS, SOURCE, PRODUCED_AT\nFROM lq_orders\nORDER BY PRODUCED_AT DESC\nLIMIT 10'},
+    {name: 'Markers of this UI', sql: "SELECT ORDER_ID, STATUS, SOURCE, PRODUCED_AT\nFROM lq_orders\nWHERE STATUS = 'MARKER'\nORDER BY PRODUCED_AT DESC\nLIMIT 10"},
+    {name: 'Key 9001 (upsert)', sql: "SELECT KEY, ORDER_ID, PRICE\nFROM lq_orders_latest\nWHERE KEY = '9001'"},
+    {name: 'Customer 9001 (append)', sql: 'SELECT ORDER_ID, PRICE, PRODUCED_AT\nFROM lq_orders\nWHERE CUSTOMER_ID = 9001\nORDER BY PRODUCED_AT DESC\nLIMIT 10'}
+  ];
+  PRESETS.forEach(function(p){
+    var b = document.createElement('button'); b.textContent = p.name;
+    b.onclick = function(){ $('sql').value = p.sql; };
+    $('presets').appendChild(b);
+  });
+  $('sql').value = PRESETS[1].sql;
+  function showRows(cols, rows){
+    var t = $('res'); t.textContent = '';
+    var th = document.createElement('thead'), tr = document.createElement('tr');
+    cols.forEach(function(c){ var h = document.createElement('th'); h.textContent = c; tr.appendChild(h); });
+    th.appendChild(tr); t.appendChild(th);
+    var tb = document.createElement('tbody');
+    rows.forEach(function(r){
+      var row = document.createElement('tr');
+      r.forEach(function(v){ var d = document.createElement('td'); d.textContent = v === null ? 'NULL' : String(v); row.appendChild(d); });
+      tb.appendChild(row);
+    });
+    t.appendChild(tb);
+  }
+  function showErr(el, code, msg, hint){
+    el.textContent = '';
+    var c = document.createElement('code'); c.textContent = code; el.appendChild(c);
+    el.appendChild(document.createTextNode(' ' + (msg || '')));
+    if (hint){ var h = document.createElement('div'); h.textContent = 'Hint: ' + hint; el.appendChild(h); }
+    el.hidden = false;
+  }
+  $('run').onclick = function(){
+    var t0 = performance.now();
+    $('run').disabled = true; $('q-err').hidden = true; $('res').textContent = '';
+    text($('q-info'), 'Running…');
+    var iv = setInterval(function(){ text($('q-time'), ((performance.now() - t0) / 1000).toFixed(2) + ' s'); }, 50);
+    api('POST', '/api/query', {sql: $('sql').value}).then(function(d){
+      clearInterval(iv); $('run').disabled = false;
+      if (d._status !== 200){ showErr($('q-err'), 'HTTP ' + d._status, d.error, ''); text($('q-info'), 'Not sent.'); text($('q-time'), '–'); return; }
+      if (d.error_code){ showErr($('q-err'), d.error_code, d.error, d.hint); text($('q-info'), d.retryable ? 'Retry in a few seconds.' : 'Fix the query.'); text($('q-time'), '–'); return; }
+      text($('q-time'), d.elapsed.toFixed(2) + ' s');
+      text($('q-info'), d.rows.length + ' rows in ' + d.elapsed.toFixed(2) + ' s (server time of the query)' + (d.rows.length >= d.max_rows ? '. Only the first ' + d.max_rows + ' rows.' : ''));
+      showRows(d.columns, d.rows);
+    }).catch(function(){ clearInterval(iv); $('run').disabled = false; text($('q-info'), 'No answer from the server.'); });
+  };
+
+  /* ---------- runs (labs 2 and 3) ---------- */
+  function write(lab){
+    busy = true; updateButtons();
+    api('POST', '/api/run', {lab: lab}).then(function(d){
+      busy = false;
+      if (d._status !== 202){ alert(d.error || ('HTTP ' + d._status)); }
+      poll();
+    }).catch(function(){ busy = false; poll(); });
+  }
+  $('mark').onclick = function(){ write(2); };
+  $('upd').onclick = function(){ write(3); };
+  function copy(btn){
+    var line = btn.getAttribute('data-line'); if (!line) return;
+    var done = function(){ var o = btn.textContent; btn.textContent = 'Copied'; setTimeout(function(){ btn.textContent = o; }, 1200); };
+    if (navigator.clipboard){ navigator.clipboard.writeText(line).then(done, function(){ prompt('Copy this line:', line); }); }
+    else prompt('Copy this line:', line);
+  }
+  $('copy2').onclick = function(){ copy($('copy2')); };
+  $('copy3').onclick = function(){ copy($('copy3')); };
+
+  function updateButtons(){
+    var active = busy || (state && state.active);
+    $('mark').disabled = !!active; $('upd').disabled = !!active;
+    var price = state ? state.next_lab3_price : 10;
+    var run = state && state.run;
+    var again = run && run.state === 'FAILED' && run.can_write_again;
+    $('mark').textContent = active ? 'Running…' : (again && run.lab === 2 ? 'Write again' : 'Write marker');
+    $('upd').textContent = active ? 'Running…' : ((again && run.lab === 3 ? 'Write again' : 'Write update') + ', price ' + price);
+  }
+
+  function live(lane){
+    // The server time of the last answer, plus the local time since then.
+    if (lane.status !== 'polling' || lane.elapsed === null) return lane.elapsed;
+    return lane.elapsed + (performance.now() - fetchedAt) / 1000;
+  }
+  function pillText(st){ return {waiting: 'WAITING', polling: 'POLLING', found: 'VISIBLE', timeout: 'TIMEOUT', error: 'ERROR'}[st] || 'IDLE'; }
+  function nextText(lane){
+    if (lane.status === 'found') return lane.polls + ' polls';
+    if (lane.status === 'timeout') return 'Not found after ' + fmt(lane.limit) + ' (' + lane.polls + ' polls)';
+    if (lane.status === 'error') return 'Stopped: error';
+    if (lane.status !== 'polling') return ' ';
+    var s = lane.rate_limited ? 'Rate limit, slower polling (every ' + lane.interval + ' s). ' : '';
+    var left = lane.next_in === null || lane.next_in === undefined ? null : lane.next_in - (performance.now() - fetchedAt) / 1000;
+    if (left === null) s += 'Poll ' + lane.polls + ' runs…';
+    else if (left <= 0) s += 'Poll ' + (lane.polls + 1) + ' runs…';
+    else s += 'Poll ' + (lane.polls + 1) + ' in ' + left.toFixed(lane.kind === 'tf' ? 0 : 1) + ' s';
+    if (lane.note && !lane.rate_limited) s += ' · ' + lane.note;
+    return s;
+  }
+  function banner(el, run){
+    if (!run){ el.hidden = true; return; }
+    el.hidden = false; el.className = 'banner ' + run.state; el.textContent = '';
+    var b = document.createElement('b'); b.textContent = run.state; el.appendChild(b);
+    el.appendChild(document.createTextNode(run.id + ' · ' + (run.message || '')));
+  }
+  function laneErr(el, lane){
+    if (lane.status === 'error'){ showErr(el, lane.error_code, '', lane.error_hint); } else el.hidden = true;
+  }
+
+  var L2 = {lq: parts('lane-lq'), tf: parts('lane-tf')};
+  function renderLab2(run){
+    banner($('b2'), run);
+    ['lq', 'tf'].forEach(function(k){
+      var u = L2[k], lane = run ? run.lanes.filter(function(l){ return l.key === k; })[0] : null;
+      if (!lane){ u.pill.className = 'pill'; text(u.pill, 'IDLE'); text(u.watch, '0:00.0'); text(u.next, ' '); text(u.log, ''); text(u.val, '–'); text(u.row, ''); u.err.hidden = true; return; }
+      u.pill.className = 'pill ' + lane.status; text(u.pill, pillText(lane.status));
+      text(u.watch, watch(live(lane)));
+      text(u.next, nextText(lane)); u.next.className = 'next' + (lane.rate_limited ? ' slow' : '');
+      text(u.log, lane.log);
+      text(u.val, lane.status === 'found' ? fmt(lane.found_after) : (lane.status === 'polling' ? 'waiting…' : '–'));
+      text(u.row, lane.status === 'found' ? run.id + ' · written ' + run.written_utc : '');
+      laneErr(u.err, lane);
+    });
+    var gap = $('gap'); gap.textContent = '';
+    if (run && run.state === 'DONE'){
+      var a = run.lanes[0].found_after, t = run.lanes[1].found_after;
+      gap.appendChild(document.createTextNode('Lightning was '));
+      var bb = document.createElement('b'); bb.textContent = Math.round(t / Math.max(a, 0.1)) + 'x'; gap.appendChild(bb);
+      gap.appendChild(document.createTextNode(' faster (' + fmt(t - a) + ' earlier).'));
+    }
+    $('copy2').disabled = !(run && run.result);
+    $('copy2').setAttribute('data-line', run && run.result ? run.result : '');
+  }
+
+  var L3 = {app: parts('tile-app'), ups: parts('tile-ups'), tf: parts('tile-tf')};
+  var shown3 = {};
+  function renderLab3(run){
+    banner($('b3'), run);
+    ['app', 'ups', 'tf'].forEach(function(k){
+      var u = L3[k], lane = run ? run.lanes.filter(function(l){ return l.key === k; })[0] : null;
+      u.chips.textContent = '';
+      if (!lane){ text(u.v, '–'); text(u.tm, ' '); return; }
+      var v = lane.value === null || lane.value === undefined ? '–' : String(lane.value).replace(/\.0$/, '');
+      if (shown3[k] !== undefined && shown3[k] !== v){ u.v.classList.remove('flash'); void u.v.offsetWidth; u.v.classList.add('flash'); }
+      shown3[k] = v; text(u.v, v);
+      text(u.tm, lane.status === 'found' ? 'after ' + fmt(lane.found_after) : (lane.status === 'polling' ? watch(live(lane)) : pillText(lane.status)));
+      var badge = document.createElement('span');
+      if (lane.status === 'found'){ badge.className = 'badge cur'; badge.textContent = 'CURRENT'; }
+      else if (lane.status === 'timeout' || lane.status === 'error'){ badge.className = 'badge bad'; badge.textContent = pillText(lane.status); }
+      else if (lane.value_order){ badge.className = 'badge old'; badge.textContent = 'OLD'; }
+      if (badge.className) u.chips.appendChild(badge);
+      var info = lane.status === 'found' ? run.id : (lane.value_order ? lane.value_order + ' (old order)' : '');
+      if (lane.status === 'polling') info += (info ? ' · ' : '') + nextText(lane);
+      if (lane.status === 'error') info = lane.error_code + ': ' + lane.error_hint;
+      u.chips.appendChild(document.createTextNode(info));
+    });
+    $('copy3').disabled = !(run && run.result);
+    $('copy3').setAttribute('data-line', run && run.result ? run.result : '');
+  }
+
+  function renderHist(id, lab, hist){
+    var ol = $(id); ol.textContent = '';
+    var items = hist.filter(function(h){ return h.lab === lab; });
+    if (!items.length){ var e = document.createElement('li'); e.className = 'empty'; e.textContent = 'No runs yet.'; ol.appendChild(e); return; }
+    items.slice(0, 20).forEach(function(h){
+      var li = document.createElement('li');
+      var a = document.createElement('span'); a.className = 'id'; a.textContent = (h.written_utc || h.at || '').replace(' UTC', '').slice(11) + ' UTC ' + h.id + (lab === 3 ? ' price ' + h.price : '');
+      var s = document.createElement('span'); s.className = 'st'; s.textContent = h.state;
+      var r = document.createElement('span'); r.textContent = h.result || h.message || '';
+      li.appendChild(a); li.appendChild(s); li.appendChild(r); ol.appendChild(li);
+    });
+  }
+
+  function render(){
+    if (!state) return;
+    var run = state.run;
+    renderLab2(run && run.lab === 2 ? run : null);
+    renderLab3(run && run.lab === 3 ? run : null);
+    updateButtons();
+  }
+  function poll(){
+    return api('GET', '/api/state').then(function(d){
+      if (d._status !== 200){ showErr($('conn'), 'HTTP ' + d._status, d.error, 'Load the page again. The server makes a new token at each start.'); return; }
+      $('conn').hidden = true;
+      state = d; fetchedAt = performance.now();
+      renderDoctor(d.doctor || {}, d.name || '');
+      renderHist('hist2', 2, d.history || []);
+      renderHist('hist3', 3, d.history || []);
+      render();
+    }).catch(function(){ showErr($('conn'), 'offline', 'No answer from the server.', 'Start it again: python3 ui/server.py'); });
+  }
+  poll();
+  setInterval(poll, 1000);
+  setInterval(render, 100);
+})();
+</script>
+</body>
+</html>

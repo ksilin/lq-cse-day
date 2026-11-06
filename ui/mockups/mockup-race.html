@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LQ Race View</title>
+<style>
+:root{
+  --bg:#f6f6f4; --card:#ffffff; --fg:#1b1d21; --muted:#5f6670; --border:#dcdfe3;
+  --lq:#c2410c; --lq-soft:#fff1e8; --tf:#0b63a8; --tf-soft:#e8f2fb;
+  --ok:#15803d; --warn:#b45309;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+@media (prefers-color-scheme: dark){
+  :root{--bg:#111317;--card:#1a1d23;--fg:#eceef1;--muted:#9aa3ad;--border:#2c313a;
+    --lq:#fb923c;--lq-soft:#2a1d14;--tf:#5cb3f5;--tf-soft:#13222f;--ok:#4ade80;--warn:#fbbf24;}
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:18px/1.4 var(--sans)}
+main{max-width:1200px;margin:0 auto;padding:20px 16px 40px}
+header{display:flex;flex-wrap:wrap;gap:12px 24px;align-items:center;justify-content:space-between;margin-bottom:20px}
+h1{font-size:26px;margin:0}
+h1 small{display:block;font-size:15px;font-weight:400;color:var(--muted)}
+.controls{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.seg{display:inline-flex;border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.seg button{border:0;background:var(--card);color:var(--fg);font:600 16px var(--sans);padding:8px 14px;cursor:pointer}
+.seg button[aria-pressed=true]{background:var(--fg);color:var(--bg)}
+.seg-label{color:var(--muted);font-size:15px}
+.go{border:0;border-radius:10px;background:var(--fg);color:var(--bg);font:700 20px var(--sans);padding:12px 26px;cursor:pointer}
+.go:disabled{opacity:.45;cursor:default}
+.marker{font:15px var(--mono);color:var(--muted);margin:-8px 0 16px}
+.lanes{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media (max-width:760px){.lanes{grid-template-columns:1fr}}
+.lane{background:var(--card);border:1px solid var(--border);border-top:6px solid var(--c);border-radius:12px;padding:18px 20px;min-width:0}
+.lane.lq{--c:var(--lq);--soft:var(--lq-soft)}
+.lane.tf{--c:var(--tf);--soft:var(--tf-soft)}
+.lane-head{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+.lane h2{margin:0;font-size:24px;color:var(--c)}
+.lane .sub{color:var(--muted);font-size:15px}
+.pill{font:700 13px var(--sans);letter-spacing:.05em;padding:4px 10px;border-radius:99px;border:1px solid var(--border);color:var(--muted);white-space:nowrap}
+.pill.polling{color:var(--c);border-color:var(--c)}
+.pill.visible{background:var(--c);color:var(--card);border-color:var(--c)}
+.watch{font:700 64px/1.1 var(--mono);margin:14px 0 2px;font-variant-numeric:tabular-nums}
+.next{color:var(--muted);font-size:15px;min-height:21px}
+.log-label{margin-top:14px;font-size:14px;color:var(--muted)}
+.log{font:20px/1.2 var(--mono);color:var(--c);background:var(--soft);border-radius:8px;padding:8px 10px;min-height:44px;max-height:96px;overflow:hidden;word-break:break-all}
+.result{margin-top:14px;padding:12px 14px;border-radius:10px;background:var(--soft);min-height:84px}
+.result .lbl{font-size:15px;color:var(--muted)}
+.result .val{font:800 40px/1.15 var(--sans);color:var(--c)}
+.result .row{font:14px var(--mono);color:var(--muted);overflow-wrap:anywhere}
+.gap{margin:18px 0 0;text-align:center;font-size:22px;min-height:32px}
+.gap b{font-size:28px}
+.wall{color:var(--muted);font-size:14px;text-align:center}
+section.hist{margin-top:26px}
+section.hist h3{font-size:18px;margin:0 0 8px}
+ol{list-style:none;margin:0;padding:0;border:1px solid var(--border);border-radius:10px;background:var(--card)}
+li{display:flex;flex-wrap:wrap;gap:4px 18px;padding:10px 14px;border-top:1px solid var(--border);font-size:17px}
+li:first-child{border-top:0}
+li .id{font:14px var(--mono);color:var(--muted);min-width:150px}
+li .l{color:var(--lq);font-weight:700}
+li .t{color:var(--tf);font-weight:700}
+li .x{color:var(--muted);margin-left:auto}
+li.new{animation:flash 1.5s}
+@keyframes flash{from{background:var(--lq-soft)}to{background:transparent}}
+footer{margin-top:20px;color:var(--muted);font-size:13px}
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Lab 2 &middot; Freshness race<small>Write one marker event to lq_orders. See when each table shows it.</small></h1>
+    <div class="controls">
+      <span class="seg-label">Speed</span>
+      <div class="seg" id="speed"></div>
+      <button class="go" id="go">Write marker</button>
+    </div>
+  </header>
+  <div class="marker" id="marker">No marker written yet.</div>
+
+  <div class="lanes">
+    <div class="lane lq" id="lane-lq">
+      <div class="lane-head">
+        <div><h2>Lightning Tables</h2><div class="sub">RTCE &middot; REST query &middot; poll every 1 s</div></div>
+        <span class="pill" data-k="pill">IDLE</span>
+      </div>
+      <div class="watch" data-k="watch">0:00.0</div>
+      <div class="next" data-k="next">&nbsp;</div>
+      <div class="log-label">Poll log (. = not found, &#10003; = found)</div>
+      <div class="log" data-k="log"></div>
+      <div class="result"><div class="lbl">Visible after</div><div class="val" data-k="val">&ndash;</div><div class="row" data-k="row"></div></div>
+    </div>
+    <div class="lane tf" id="lane-tf">
+      <div class="lane-head">
+        <div><h2>Tableflow</h2><div class="sub">Iceberg &middot; DuckDB query &middot; poll every 30 s</div></div>
+        <span class="pill" data-k="pill">IDLE</span>
+      </div>
+      <div class="watch" data-k="watch">0:00.0</div>
+      <div class="next" data-k="next">&nbsp;</div>
+      <div class="log-label">Poll log (. = not found, &#10003; = found)</div>
+      <div class="log" data-k="log"></div>
+      <div class="result"><div class="lbl">Visible after</div><div class="val" data-k="val">&ndash;</div><div class="row" data-k="row"></div></div>
+    </div>
+  </div>
+
+  <div class="gap" id="gap"></div>
+  <div class="wall" id="wall">Times show lab time. At 10x and 60x the demo runs faster than the lab.</div>
+
+  <section class="hist">
+    <h3>Past runs</h3>
+    <ol id="hist"></ol>
+  </section>
+  <footer>Mockup. Fake data. The real app polls tools/lq.py every 1 s and tableflow/tableflow_query.sh every 30 s.</footer>
+</main>
+<script>
+(function(){
+  'use strict';
+  var SPEEDS = [1, 10, 60];
+  var speed = 10;
+  var sim = 0;              // lab seconds since page load
+  var run = null, runN = 0;
+  var BASE = Date.UTC(2026, 10, 5, 17, 17, 35, 865);
+  var history = [
+    {id:'MARKER-0998', lq:2.5, tf:198, when:'15:40'},
+    {id:'MARKER-0999', lq:4.0, tf:112, when:'16:02'}
+  ];
+
+  function fmt(s){
+    if (s < 60) return s.toFixed(1) + ' s';
+    var t = Math.round(s), m = Math.floor(t / 60), r = t % 60;
+    return m + ' min ' + (r < 10 ? '0' : '') + r + ' s';
+  }
+  function watch(s){
+    var m = Math.floor(s / 60), r = s - m * 60;
+    return m + ':' + (r < 10 ? '0' : '') + r.toFixed(1);
+  }
+  function ts(sec){
+    var d = new Date(BASE + sec * 1000), p = function(n, w){ n = String(n); while (n.length < (w || 2)) n = '0' + n; return n; };
+    return d.getUTCFullYear() + '-' + p(d.getUTCMonth() + 1) + '-' + p(d.getUTCDate()) + ' ' + p(d.getUTCHours()) + ':' + p(d.getUTCMinutes()) + ':' + p(d.getUTCSeconds()) + '.' + p(d.getUTCMilliseconds(), 3) + '+00';
+  }
+
+  // speed switch
+  var segEl = document.getElementById('speed');
+  SPEEDS.forEach(function(s){
+    var b = document.createElement('button');
+    b.textContent = s + 'x';
+    b.setAttribute('aria-pressed', s === speed);
+    b.onclick = function(){ speed = s; Array.prototype.forEach.call(segEl.children, function(c){ c.setAttribute('aria-pressed', c === b); }); };
+    segEl.appendChild(b);
+  });
+
+  function lane(id){
+    var el = document.getElementById(id), o = {};
+    Array.prototype.forEach.call(el.querySelectorAll('[data-k]'), function(n){ o[n.getAttribute('data-k')] = n; });
+    return o;
+  }
+  var UI = {lq: lane('lane-lq'), tf: lane('lane-tf')};
+  var goBtn = document.getElementById('go');
+
+  goBtn.onclick = function(){
+    runN++;
+    var first = runN === 1;
+    run = {
+      id: 'MARKER-' + (1000 + runN),
+      t0: sim, wall0: performance.now(), saved: false,
+      lq: {vis: first ? 1.5 : 1.5 + Math.random() * 6.5, next: 0.5, period: 1, polls: 0, done: null, log: ''},
+      tf: {vis: first ? 250 : 45 + Math.random() * 195, next: first ? 23 : Math.random() * 30, period: 30, polls: 0, done: null, log: ''}
+    };
+    goBtn.disabled = true;
+    goBtn.textContent = 'Running…';
+    document.getElementById('marker').textContent = 'Wrote ORDER_ID ' + run.id + ' to lq_orders at ' + ts(sim) + '. Wait for both tables.';
+    document.getElementById('gap').textContent = '';
+  };
+
+  function step(){
+    var e = sim - run.t0;
+    ['lq', 'tf'].forEach(function(k){
+      var L = run[k];
+      while (L.done === null && e >= L.next){
+        L.polls++;
+        if (L.next >= L.vis){ L.done = L.next; L.log += '✓'; }
+        else L.log += '.';
+        L.next += L.period;
+      }
+    });
+    if (run.lq.done !== null && run.tf.done !== null && !run.saved){
+      run.saved = true;
+      var d = new Date(BASE + sim * 1000);
+      history.push({id: run.id, lq: run.lq.done, tf: run.tf.done, when: String(d.getUTCHours()).padStart(2, '0') + ':' + String(d.getUTCMinutes()).padStart(2, '0'), isNew: true});
+      renderHistory();
+      goBtn.disabled = false;
+      goBtn.textContent = 'Write marker';
+      var ratio = Math.round(run.tf.done / run.lq.done);
+      document.getElementById('gap').innerHTML = 'Lightning was <b>' + ratio + 'x</b> faster (' + fmt(run.tf.done - run.lq.done) + ' earlier).';
+    }
+  }
+
+  function render(){
+    ['lq', 'tf'].forEach(function(k){
+      var u = UI[k];
+      if (!run){ return; }
+      var L = run[k], e = sim - run.t0;
+      var shown = L.done !== null ? L.done : e;
+      u.watch.textContent = watch(shown);
+      u.pill.textContent = L.done !== null ? 'VISIBLE' : 'POLLING';
+      u.pill.className = 'pill ' + (L.done !== null ? 'visible' : 'polling');
+      u.next.textContent = L.done !== null ? (L.polls + ' polls') : ('Poll ' + (L.polls + 1) + ' in ' + Math.max(0, L.next - e).toFixed(k === 'lq' ? 1 : 0) + ' s');
+      u.log.textContent = L.log;
+      u.val.textContent = L.done !== null ? fmt(L.done) : 'waiting…';
+      u.row.textContent = L.done !== null ? (run.id + ' | 9001 | ' + ts(run.t0)) : '';
+    });
+    if (run){
+      var wall = (run.saved ? run.wallEnd : (performance.now() - run.wall0) / 1000);
+      if (run.saved && run.wallEnd === undefined){ run.wallEnd = (performance.now() - run.wall0) / 1000; wall = run.wallEnd; }
+      document.getElementById('wall').textContent = 'Lab time ' + fmt(Math.min(sim - run.t0, run.saved ? run.tf.done : 1e9)) + ' · demo time ' + fmt(wall) + ' at ' + speed + 'x';
+    }
+  }
+
+  function renderHistory(){
+    var ol = document.getElementById('hist');
+    ol.innerHTML = '';
+    history.slice().reverse().forEach(function(h){
+      var li = document.createElement('li');
+      if (h.isNew){ li.className = 'new'; h.isNew = false; }
+      li.innerHTML = '<span class="id">' + h.when + ' ' + h.id + '</span>' +
+        '<span>Lightning <span class="l">' + fmt(h.lq) + '</span></span>' +
+        '<span>|</span>' +
+        '<span>Tableflow <span class="t">' + fmt(h.tf) + '</span></span>' +
+        '<span class="x">' + Math.round(h.tf / h.lq) + 'x</span>';
+      ol.appendChild(li);
+    });
+  }
+  renderHistory();
+
+  var last = performance.now();
+  setInterval(function(){
+    var now = performance.now();
+    sim += (now - last) / 1000 * speed;
+    last = now;
+    if (run) step();
+    render();
+  }, 50);
+})();
+</script>
+</body>
+</html>
