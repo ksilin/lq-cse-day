@@ -7,8 +7,8 @@ This repository has Lab 1 now. Labs 2 to 4 follow before 2026-11-06.
 ## What you will do
 
 - **Lab 1, enable and query (about 40 minutes).** Create a cluster and a Flink pool. Fill a topic with order events. Turn on RTCE. Run a Lightning query. Proof: `tools/lq.py` returns rows. Start here: [labs/01-enable-and-query/README.md](labs/01-enable-and-query/README.md).
-- **Lab 2, freshness (coming).** Write a marker event. See it in Lightning Queries within seconds, while Tableflow does not have it yet.
-- **Lab 3, upsert (coming).** Query a table that holds one current row per key, and time one update in Lightning Queries and in Tableflow.
+- **[Lab 2, freshness](labs/02-freshness/README.md).** Write a marker event. See it in Lightning Queries within seconds, while Tableflow does not have it yet.
+- **[Lab 3, upsert](labs/03-upsert/README.md).** Query a table that holds one current row per key, and time one update in Lightning Queries and in Tableflow.
 - **Lab 4, optional exercises (coming).**
 
 ## Prerequisites
@@ -50,11 +50,14 @@ Check the setup:
 - `tools/lq_selftest.py` runs 4 live steps: `SHOW TABLES`, one `SELECT`, the expected error for `COUNT(*)`, and one marker event from produce until it is visible.
 - `tools/test_lq.py` and `tools/test_doctor.py` test the tools with no network. Run `python3 -m unittest discover -s tools`.
 
-Flink and Kafka:
+Flink, Kafka and Tableflow:
 
 - `tools/flink_run.sh <name> <sql-file-or-sql>` submits one Flink statement and prints its real status. The CLI also exits with 0 when a statement failed, so the script reads the status from the JSON.
 - `tools/flink_results.sh <name>` prints the result rows of a Flink statement over the Flink REST API. The CLI has no command for this.
 - `tools/marker_json.sh <order-id> [customer-id] [status] [price]` prints one order event as Avro JSON for `confluent kafka topic produce --value-format avro`.
+- `tableflow/tableflow_watch.sh <topic> <order-id>` asks the Tableflow (Iceberg) copy every 30 seconds with DuckDB, until the order is there. It prints the minutes it waited.
+- `tableflow/tableflow_query.sh "<sql>"` runs one SQL query on the Tableflow copy with DuckDB.
+- `tableflow/duckdb_tableflow.sql` is the same DuckDB setup as a file, for your own Tableflow queries.
 
 ### How `lq.py` works
 

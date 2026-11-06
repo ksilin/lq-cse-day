@@ -168,6 +168,13 @@ If the status is `FAILED` with "technical difficulties", the cluster or the envi
 confluent flink statement delete lq-$LQ_NAME-create-orders --force --environment "$LQ_ENV_ID" --cloud aws --region "$LQ_REGION"
 ```
 
+CLI v4.82.0 can print `RUNNING` here, because `--wait` can return before the end. This is not an error. Wait 10 seconds and check the status. It must be `COMPLETED`:
+
+```bash
+confluent flink statement describe lq-$LQ_NAME-create-orders \
+  --environment "$LQ_ENV_ID" --cloud aws --region "$LQ_REGION" -o json | jq -r .status
+```
+
 Do not go on before step 9 is `COMPLETED`. Without the table, step 10 fails with `Cannot find table`, and step 11 sets RTCE to `FAILED`.
 
 10. Start the feed. It runs until you stop it. The status must be `RUNNING`.
@@ -312,10 +319,10 @@ Keep everything if you continue with Lab 2 and Lab 3. Do this when you stop. It 
 confluent environment delete "$LQ_ENV_ID" --force
 ```
 
-1b. Keep the existing environment, and delete only your resources in it. First delete your Flink statements. The command deletes only names with your `LQ_NAME`.
+1b. Keep the existing environment, and delete only your resources in it. First delete your Flink statements, also those of Lab 3. The command deletes only names with your `LQ_NAME`. It prints an error for a statement that does not exist. You can ignore that error.
 
 ```bash
-for s in create-orders feed-orders; do confluent flink statement delete "lq-$LQ_NAME-$s" --force --environment "$LQ_ENV_ID" --cloud aws --region "$LQ_REGION"; done
+for s in create-orders feed-orders create-orders-latest feed-orders-latest; do confluent flink statement delete "lq-$LQ_NAME-$s" --force --environment "$LQ_ENV_ID" --cloud aws --region "$LQ_REGION"; done
 ```
 
 Then delete the Flink pool and the cluster. The cluster delete also deletes the topic.
@@ -328,9 +335,15 @@ confluent flink compute-pool delete "$LQ_POOL_ID" --environment "$LQ_ENV_ID" --f
 confluent kafka cluster delete "$LQ_CLUSTER_ID" --environment "$LQ_ENV_ID" --force
 ```
 
-The schema of `lq_orders` stays in the Schema Registry of the environment. It costs nothing.
+The schemas of `lq_orders` and `lq_orders_latest` stay in the Schema Registry of the environment. They cost nothing.
 
-2. Delete the Global key of step 7. Skip this step if it is a key that you had before the lab.
+2. Delete the Kafka key of Lab 2, step 2. Skip this step if you did not do Lab 2.
+
+```bash
+confluent api-key delete "$LQ_KAFKA_KEY" --force
+```
+
+   Then delete the Global key of step 7. Skip this if it is a key that you had before the lab.
 
 ```bash
 confluent api-key delete "$LQ_API_KEY" --force
