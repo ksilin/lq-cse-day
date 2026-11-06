@@ -34,6 +34,7 @@ Install and check these before the CSE Day:
 
 1. Run `python3 tools/lq_doctor.py`. It checks your setup and prints a fix for each problem. It only reads.
 2. Read [docs/troubleshooting.md](docs/troubleshooting.md).
+3. Read [docs/limits.md](docs/limits.md) before you run your own queries. Always add `LIMIT`.
 
 ## Tools
 
@@ -41,7 +42,7 @@ The labs use these scripts. Each script starts with a comment that gives its usa
 
 Run queries:
 
-- `tools/lq.py "<sql>"` runs one Lightning query and prints the rows as a table. `--json` prints the columns and rows as JSON. `-f <file>` reads the SQL from a file. The table shows the first 100 rows, and `--json` prints all rows. `--max-rows <n>` asks for at most n rows. Exit code 0 means rows (or no rows). Exit code 2 means "retry later", for example when the table is not ready yet. Exit code 1 means any other error.
+- `tools/lq.py "<sql>"` runs one Lightning query and prints the rows as a table. `--json` prints the columns and rows as JSON. `-f <file>` reads the SQL from a file. The table shows the first 100 rows, and `--json` prints all rows. `--max-rows <n>` asks for at most n rows. `--max-download-mb <n>` stops a large result above n MB (default 100, `0` = no limit). Exit code 0 means rows (or no rows). Exit code 2 means "retry later", for example when the table is not ready yet. Exit code 1 means any other error.
 - `tools/lq_watch.py "<sql>"` repeats a query once per second until it returns rows, and prints the seconds it waited. `--until-empty` waits until the query returns no rows. Lab 2 and Lab 3 measure the freshness with it.
 
 Check the setup:

@@ -195,7 +195,7 @@ confluent rtce rtce-topic create --cloud aws --region "$LQ_REGION" --topic-name 
 confluent tableflow topic enable lq_orders --cluster "$LQ_CLUSTER_ID" --environment "$LQ_ENV_ID" --storage-type MANAGED --table-formats ICEBERG
 ```
 
-13. Run your first Lightning query.
+13. Run your first Lightning query. Always keep the `LIMIT`: Notes explain why.
 
 ```bash
 python3 tools/lq.py "SELECT * FROM lq_orders LIMIT 5"
@@ -302,7 +302,9 @@ You are done with Lab 1 when `lq.py` prints rows from your table.
 - The raw REST request, for an org with REST access: `curl -sS -X POST "https://sql.$LQ_REGION.aws.confluent.cloud/query/v1" -u "$LQ_API_KEY:$LQ_API_SECRET" -H "Content-Type: application/json" -d "{\"catalog_name\":\"$LQ_ENV_ID\",\"database_name\":\"$LQ_CLUSTER_ID\",\"query\":\"SELECT STATUS FROM lq_orders LIMIT 1\"}" | jq -c .result.data`. The section Tools of the main README shows the REST and the MCP request.
 - `403 api_not_enabled` over REST means that the org has no REST access. It can also mean that the Global key belongs to another org. A Global key belongs to the org that was selected when you created it.
 - Column names are not case-sensitive without quotes. With quotes they must be upper case: `"ORDER_ID"` works, `"order_id"` fails with `FE_SQL_VALIDATION_ERROR`.
-- `PRODUCED_AT` is in UTC. A REST query returns all rows. `tools/lq.py` shows the first 100 in the table, and `--json` prints all. MCP returns at most 200 rows.
+- **Always add `LIMIT`, or a `WHERE` clause on a key.** Without it, REST returns every row. On 2026-11-06, `SELECT * FROM lq_orders` gave one file of 632 MB with 6,031,066 rows. The feed adds rows all the time. `tools/lq.py` stops a download above 100 MB with `result_too_large`. More limits: [docs/limits.md](../../docs/limits.md).
+- `tools/lq.py` shows the first 100 rows in the table, and `--json` prints all. MCP returns at most 200 rows.
+- `PRODUCED_AT` is in UTC. It is a `TIMESTAMP_LTZ` in Flink. `DESCRIBE` shows it as `TIMESTAMP(6) WITH TIME ZONE`, and it works.
 - The CLI exits with 0 also when a Flink statement fails. Check the status with the first Look command, or with `python3 tools/lq_doctor.py`.
 - `confluent lightning query` prints `Table does not exist: 'lq_orders'` for a table that is not ready yet. `lq.py` shows the same case as `FE_TABLE_NOT_FOUND`. Retry in 30 seconds.
 - Never delete a topic and create it again under the same name. RTCE can keep old state for it. Use a new name.

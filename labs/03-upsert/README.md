@@ -269,9 +269,9 @@ new order again (re-add)           visible after 64.0 s
 - If the feed runs during this lab, each step can take up to 2 minutes, because the feed holds back every new order until its next commit.
 - `MT_UPSERT_NOT_SUPPORTED` means that the org cannot use upsert tables. Ask your Confluent account team. Use the `ORDER BY ... DESC LIMIT 1` query from Look on the append table instead.
 - Between `ACTIVE` and the first rows, the upsert table answered `HTTP 500 MT_METADATA_UPDATE`, "Lightning Table temporarily unavailable". `lq.py` treats this as "retry".
-- RTCE needs a raw key for upsert. Avro or Protobuf keys fail. In Flink, a raw key column must be named `key`.
+- This lab uses a raw key. In Flink, a raw key column must be named `key`. The docs say that an Avro, Protobuf or JSON Schema key also works, but that a key schema change is not supported. We did not test a key with a schema.
 - Upsert or append: upsert keeps one row per key, so storage stays small and the client does not sort. Append keeps the history, but each query must sort.
-- Fresh or simple: the append table plus `ORDER BY ... DESC LIMIT 1` is the freshest current row, in seconds. The upsert table needs no sort, but it waits for the Flink commit. Tableflow is for analytics in minutes, not for the current state.
+- Fresh or simple: the append table plus `ORDER BY ... DESC LIMIT 1` is the freshest current row, in seconds. The upsert table needs no sort, but it waits for the Flink commit. Tableflow is for analytics in minutes, not for the current state. For a count or a sum per key, use a Flink snapshot query: see [docs/limits.md](../../docs/limits.md).
 - `tableflow_query.sh` prints DuckDB errors, for example `Table with name ... does not exist` if Tableflow is off for the topic. Use lower-case column names in DuckDB.
 - Before you change `sql/11_feed_orders_latest.sql`, run `EXPLAIN` on it in the Flink workspace. The upsert key and the sink primary key must both be `(key)`.
 

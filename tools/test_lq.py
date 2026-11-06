@@ -474,6 +474,77 @@ class TestAsync(unittest.TestCase):
         self.assertTrue(ctx.exception.retryable)
 
 
+
+def big_file(n_bytes, content_length=True):
+    """A result file of about n_bytes. content_length=False: the server sends no size header."""
+    rows = [["x" * 1000] for _ in range(max(1, n_bytes // 1010))]
+    reply = result_file(rows)
+    if content_length:
+        reply.headers = {"Content-Length": str(len(reply.getvalue()))}
+    return reply
+
+
+@mock.patch("lq.time.sleep", lambda s: None)
+class TestDownloadLimit(unittest.TestCase):
+    """A query without LIMIT returned one 632 MB file on 2026-11-06. lq.py must stop before the memory is full."""
+    def run_async(self, files, **settings):
+        urls = [f"https://s3.example/r{i}" for i in range(len(files))]
+        replies = [accepted(), job("SUCCEEDED", urls)] + files
+        with mock.patch("sys.stderr", io.StringIO()):
+            return lq.run_query(dict(SETTINGS, LQ_MODE="rest", **settings), "SELECT A FROM lq_orders",
+                                opener=script_opener(replies, []))
+
+    def test_file_above_the_limit_stops_with_result_too_large(self):
+        with self.assertRaises(lq.QueryError) as ctx:
+            self.run_async([big_file(2 << 20)], LQ_MAX_DOWNLOAD_MB="1")
+        self.assertEqual(ctx.exception.code, "result_too_large")
+        self.assertFalse(ctx.exception.retryable)
+        self.assertIn("1 MB", ctx.exception.message)
+
+    def test_limit_works_also_without_a_content_length_header(self):
+        with self.assertRaises(lq.QueryError) as ctx:
+            self.run_async([big_file(2 << 20, content_length=False)], LQ_MAX_DOWNLOAD_MB="1")
+        self.assertEqual(ctx.exception.code, "result_too_large")
+
+    def test_limit_counts_all_files_together(self):
+        with self.assertRaises(lq.QueryError):
+            self.run_async([big_file(700_000), big_file(700_000)], LQ_MAX_DOWNLOAD_MB="1")
+
+    def test_zero_means_no_limit(self):
+        _, _, rows = self.run_async([big_file(2 << 20)], LQ_MAX_DOWNLOAD_MB="0")
+        self.assertGreater(len(rows), 1000)
+
+    def test_default_limit_is_100_mb(self):
+        self.assertEqual(lq.MAX_DOWNLOAD_MB, 100)
+        _, _, rows = self.run_async([big_file(1 << 20)])
+        self.assertGreater(len(rows), 500)
+
+    def test_main_prints_the_hint_and_exits_1(self):
+        replies = [accepted(), job("SUCCEEDED", ["https://s3.example/r1"]), big_file(2 << 20)]
+        err = io.StringIO()
+        with mock.patch("sys.stderr", err), redirect_stdout(io.StringIO()):
+            code = lq.main(["--max-download-mb", "1", "SELECT A FROM t"], opener=script_opener(replies, []),
+                           settings=dict(SETTINGS, LQ_MODE="rest"))
+        self.assertEqual(code, 1)
+        self.assertIn("result_too_large", err.getvalue())
+        self.assertIn("LIMIT", err.getvalue())
+
+    def test_negative_flag_value_is_a_usage_error(self):
+        with mock.patch("sys.stderr", io.StringIO()), self.assertRaises(SystemExit) as ctx:
+            lq.main(["--max-download-mb", "-1", "SELECT A FROM t"], settings=dict(SETTINGS, LQ_MODE="rest"))
+        self.assertEqual(ctx.exception.code, 1)
+
+
+class Test404(unittest.TestCase):
+    """The API docs: 404 means that the table is not available yet, for example while it is set up. Retry."""
+    def test_404_is_retryable_and_counts_as_table_missing(self):
+        e = lq.QueryError(404, "", "not found")
+        self.assertTrue(e.retryable)
+        self.assertTrue(e.table_missing)
+
+    def test_404_hint_says_retry(self):
+        self.assertIn("Retry", lq.STATUS_HINTS[404])
+
 class TestRowLimits(unittest.TestCase):
     def test_mcp_asks_for_200_rows_without_max_rows(self):
         self.assertEqual(json.loads(lq.build_mcp_request(SETTINGS, "SELECT A FROM t").data)

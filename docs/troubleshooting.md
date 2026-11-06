@@ -7,7 +7,7 @@ Run `python3 tools/lq_doctor.py` first. It checks the login, the IDs, the region
 ## New environment or new cluster
 
 - `CREATE TABLE` fails with "Unable to process the request due to technical difficulties", or the CLI says `Statement with name "lq-$LQ_NAME-create-orders" already exists`. Cause: the environment or the cluster is too new. On 2026-11-02, in an existing environment, it failed about 1.5 minutes after the cluster create, and worked after about 4 minutes. Fix: wait 1 minute, `confluent flink statement delete lq-$LQ_NAME-create-orders --force --environment "$LQ_ENV_ID" --cloud aws --region "$LQ_REGION"`, then run Lab 1 step 9 again. Seen two times on 2026-10-27.
-- RTCE phase `FAILED` for `lq_orders` right after step 11. Cause: the topic did not exist, because step 9 failed. Fix: the simplest fix is a new environment, or a new cluster in an existing environment (Lab 1, Clean up, then Lab 1 again). RTCE can keep old state for a topic name.
+- RTCE phase `FAILED` for `lq_orders` right after step 11. Cause: the topic did not exist, because step 9 failed. Fix: the simplest fix is a new environment, or a new cluster in an existing environment (Lab 1, Clean up, then Lab 1 again). RTCE can keep old state for a topic name. The docs also say: fix the cause, then disable the Lightning Table and enable it again.
 - `Statement with name "lq-$LQ_NAME-create-orders" already exists` in an existing environment (Lab 1, step 4b). Cause: a statement with this name is already in the environment. Flink statement names are unique in an environment. Fix: if it is yours from an earlier run, delete it with Lab 1, Clean up, step 1b. If another person uses the same `LQ_NAME` (often `changeme`, the default), choose another `LQ_NAME` in `tools/lq.env`.
 
 ## Access
@@ -27,6 +27,7 @@ These are normal for some minutes after RTCE is `ACTIVE`. `lq.py` exits with cod
 - `DP_TABLE_NOT_AVAILABLE`, "Table data is not yet available."
 - `HTTP 500 MT_METADATA_UPDATE`, "Lightning Table temporarily unavailable" (seen on new upsert tables).
 - `FE_BACKEND_UNAVAILABLE`, `FE_TABLE_NOT_AVAILABLE`, `DP_INVALID_TABLE`.
+- `HTTP 404`. The docs say that the table is still being set up. `lq.py` treats it as "retry".
 - `0 rows` right after the start: the Flink feed has not committed yet. Retry after one minute.
 
 ## SQL
@@ -36,12 +37,14 @@ These are normal for some minutes after RTCE is `ACTIVE`. `lq.py` exits with cod
 - `FE_SQL_SELECT_ONLY`, "Only SELECT queries are supported." Cause: `INSERT`, DDL, or a typo such as `SELEC`.
 - `FE_SQL_MULTI_STATEMENT`. Cause: two statements. Fix: one per request.
 - Exactly 200 rows. Cause: you used MCP, which returns at most 200 rows with no warning. REST returns all rows.
+- `result_too_large`. Cause: a query without `LIMIT` gave a result larger than 100 MB. Fix: add a `LIMIT` or a `WHERE` clause on a key. `--max-download-mb 0` removes the limit, but a large result needs several GB of memory.
+- A value looks different from older output, for example `30.0` instead of `30`, or `+00` at the end of a time. Cause: the value format changed on 2026-11-02 and by 2026-11-05. Fix: compare numbers and times, not text.
 - `note: the server runs this query asynchronously`. Cause: a large result or a slow query. This is normal. `lq.py` waits for the job and downloads the result.
 - `FE_STATEMENT_FAILED`. Cause: an asynchronous query failed, for example because its result is too large or it ran too long. Fix: add a `LIMIT` or a narrower `WHERE` clause.
 
 ## Upsert
 
-- `MT_UPSERT_NOT_SUPPORTED`, "Upsert (compacted) topics are not supported in RTCE." Cause: the org has no upsert flag. Fix: use the append table with `ORDER BY PRODUCED_AT DESC LIMIT 1`.
+- `MT_UPSERT_NOT_SUPPORTED`, "Upsert (compacted) topics are not supported in RTCE." Cause: the org cannot use upsert tables. Fix: use the append table with `ORDER BY PRODUCED_AT DESC LIMIT 1`.
 - `If a key is provided with a 'raw' format it must use 'key' as the column name`. Fix: name the raw key column `key`.
 - `MT_INVALID_MATERIALIZATION_MODE`. Cause: `cleanup.policy=delete` with `changelog.mode=upsert`. Fix: use `compact`.
 
@@ -62,11 +65,11 @@ These are normal for some minutes after RTCE is `ACTIVE`. `lq.py` exits with cod
 - `lq_watch.py` stops with `FE_TABLE_NOT_FOUND` after 2 minutes. Cause: a wrong table name. Fix: check the name with `SHOW TABLES`.
 - `tableflow_watch.sh` prints `not yet (no answer: ... Unauthorized_401 ...)`. Cause: a wrong Global key or secret. Fix: check `LQ_API_KEY` and `LQ_API_SECRET`.
 - The CLI producer says `Error: schema not found`. Cause: a wrong `LQ_SCHEMA_ID`. Fix: look it up again (Lab 2, step 3).
-- The CLI producer says `SASL authentication error: Authentication failed. If you are using a Global API key for authentication, please check whether this cluster type is supported`. Cause: you used the Global key. Global keys do not work on Basic and Standard clusters. Fix: use the Kafka key from Lab 2, step 2.
+- The CLI producer says `SASL authentication error: Authentication failed. If you are using a Global API key for authentication, please check whether this cluster type is supported`. Cause: you used the Global key. A Global key cannot produce to a Basic or Standard cluster. It works for Lightning queries. Fix: use the Kafka key from Lab 2, step 2.
 - The CLI producer says `Select an API key for resource lkc-…`. Cause: no `--api-key` and `--api-secret`. Fix: load `tools/lq.env` again, and check `LQ_KAFKA_KEY`.
 - The CLI producer says `cannot decode textual union: expected: '{'`. Cause: the Avro JSON has no union branch names. Fix: use `tools/marker_json.sh`.
 - `tableflow_watch.sh` prints `not yet (no answer)` all the time. Cause: DuckDB cannot attach: wrong key, or Tableflow not `RUNNING`. Fix: check the phase (Lab 2, step 5) and the key.
-- DuckDB HTTP 401 after about 30 minutes. Cause: the catalog token expired. Fix: run the SQL file again. `tableflow_watch.sh` does this on every try.
+- DuckDB HTTP 401 after 15 minutes. Cause: the catalog token expired (`"expires_in": 900`). Fix: run the SQL file again. `tableflow_watch.sh` does this on every try.
 - `HTTP 500` with an empty message, or a DNS error for `sql.<region>`. Cause: the region has no Lightning Queries. Fix: use eu-central-1.
 
 ## Shell

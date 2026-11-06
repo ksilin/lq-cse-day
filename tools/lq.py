@@ -39,13 +39,15 @@ import urllib.request
 
 DEFAULT_ENV_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "lq.env")
 DEFAULTS = {"LQ_MODE": "auto"}
-OPTIONAL = ["LQ_ORG_ID"]
+OPTIONAL = ["LQ_ORG_ID", "LQ_MAX_DOWNLOAD_MB"]
 REQUIRED = ["LQ_REGION", "LQ_ENV_ID", "LQ_CLUSTER_ID", "LQ_API_KEY", "LQ_API_SECRET"]
 MCP_MAX_ROWS = 200  # MCP queryData returns at most 200 rows, also when you ask for more
 SHOW_ROWS = 100     # the table output shows this many rows; --json prints all
 API_PATH = "query/v1"
 JOB_TIMEOUT = 300.0  # seconds to wait for an asynchronous query
 JOB_INTERVAL = 1.0   # seconds between two job status requests
+MAX_DOWNLOAD_MB = 100  # stop a result download above this size; 0 = no limit (LQ_MAX_DOWNLOAD_MB, --max-download-mb)
+CHUNK = 1 << 20
 
 RETRY = "Table not ready yet: retry in 30 s. Up to 10 minutes after ACTIVE is normal (12 for upsert)."
 HINTS = {
@@ -55,13 +57,14 @@ HINTS = {
     "FE_TABLE_NOT_AVAILABLE": RETRY,
     "DP_TABLE_NOT_AVAILABLE": RETRY,
     "DP_INVALID_TABLE": RETRY,
-    "MT_UPSERT_NOT_SUPPORTED": "The org has no upsert flag. Use Lab 3 path B (append table).",
+    "MT_UPSERT_NOT_SUPPORTED": "This org cannot use upsert tables. Use the append table with ORDER BY ... DESC LIMIT 1 (Lab 3, Look).",
     "FE_UNAUTHENTICATED": "Use a Global API key. Check the key and the secret.",
     "FE_AUTHORIZATION_FAILED": "You need DeveloperRead on the cluster and on Schema Registry (EnvironmentAdmin covers both).",
-    "FE_SQL_VALIDATION_ERROR": "Check the SQL. Column names are upper case. Quote reserved words such as \"KEY\".",
+    "FE_SQL_VALIDATION_ERROR": "Check the SQL. Column names are upper case. A quoted name must be upper case too, for example \"ORDER_ID\".",
     "FE_RATE_LIMITED": "Rate limit. Wait a few seconds and retry.",
     "RATE_LIMIT_EXCEEDED": "Rate limit. Wait a few seconds and retry. Query less often, for example lq_watch.py --interval 5.",
-    "query_timeout": "The query took longer than 20 s. Retry, or add a WHERE clause.",
+    "query_timeout": "The query took too long. MCP stops after 20 s. lq.py waits 300 s for an asynchronous query. Add a LIMIT or a narrower WHERE clause.",
+    "result_too_large": "Add a LIMIT or a narrower WHERE clause. To download all of it, use --max-download-mb 0. A large result needs several GB of memory.",
     "FE_TABLE_NOT_FOUND": "Check the table name with SHOW TABLES. If you turned on RTCE a moment ago, retry in 30 s.",
     "FE_SQL_SELECT_ONLY": "Lightning Queries runs only SELECT, SHOW TABLES and DESCRIBE. Check the spelling of SELECT.",
     "FE_SQL_MULTI_STATEMENT": "Send one statement per request.",
@@ -79,7 +82,7 @@ RETRYABLE = {"FE_CUSTOMER_NOT_FOUND", "FE_BACKEND_UNAVAILABLE", "FE_TABLE_NOT_AV
              "DP_TABLE_NOT_AVAILABLE", "DP_INVALID_TABLE", "FE_RATE_LIMITED", "RATE_LIMIT_EXCEEDED", "query_timeout",
              "FE_TABLE_NOT_FOUND", "MT_METADATA_UPDATE"}
 STATUS_HINTS = {401: "Use a Global API key (not a cluster key). Check the key and the secret.",
-                404: "Wrong URL path. It must end in /query/v1.",
+                404: "The Lightning Table is not available yet, for example because it is still being set up. Retry in 30 s. If it stays, check that the URL path ends in /query/v1.",
                 429: HINTS["FE_RATE_LIMITED"],
                 500: "Server error. Retry. If it repeats, check that the region supports Lightning Queries."}
 
@@ -115,7 +118,7 @@ class QueryError(Exception):
     @property
     def table_missing(self) -> bool:
         """The table is not there (yet). A new table can answer like this for some seconds after ACTIVE."""
-        if self.code == "FE_TABLE_NOT_FOUND":
+        if self.code == "FE_TABLE_NOT_FOUND" or self.status == 404:
             return True
         return (self.code == "FE_SQL_VALIDATION_ERROR" and "Object '" in self.message
                 and "' not found" in self.message)
@@ -328,11 +331,39 @@ def wait_for_job(settings: dict, location: str, opener=urllib.request.urlopen) -
         time.sleep(JOB_INTERVAL)
 
 
-def download_results(urls: list[str], opener=urllib.request.urlopen) -> tuple[list[str], list[list[str]]]:
-    """Download the result files of a job. A presigned URL must have no Authorization header."""
+def _too_large(limit: int) -> QueryError:
+    return QueryError(0, "result_too_large",
+                      f"the result is larger than {limit // (1 << 20)} MB, so lq.py stopped the download", via="job")
+
+
+def _read_limited(request, opener, remaining: int | None) -> bytes:
+    """Read one result file. Stop as soon as it is larger than remaining bytes (None = no limit)."""
+    try:
+        with _open(request, opener) as response:
+            size = _header(dict(getattr(response, "headers", {}) or {}), "Content-Length")
+            if remaining is not None and size.isdigit() and int(size) > remaining:
+                raise _too_large(remaining)
+            parts, total = [], 0
+            while chunk := response.read(CHUNK):
+                total += len(chunk)
+                if remaining is not None and total > remaining:
+                    raise _too_large(remaining)
+                parts.append(chunk)
+            return b"".join(parts)
+    except urllib.error.HTTPError as e:
+        raise QueryError(e.code, "", format_error(e.code, e.read().decode(errors="replace")), via="job") from None
+
+
+def download_results(urls: list[str], opener=urllib.request.urlopen,
+                     max_mb: int = MAX_DOWNLOAD_MB) -> tuple[list[str], list[list[str]]]:
+    """Download the result files of a job. A presigned URL must have no Authorization header.
+    Stop above max_mb in total (0 = no limit), before the result fills the memory."""
     columns, rows = [], []
+    budget = max_mb * (1 << 20) if max_mb else None
     for url in urls:
-        _, _, raw = _send(urllib.request.Request(url, method="GET"), opener)
+        raw = _read_limited(urllib.request.Request(url, method="GET"), opener, budget)
+        if budget is not None:
+            budget -= len(raw)
         cols, part = parse_rows(json.loads(raw))
         columns = columns or cols
         rows += part
@@ -350,7 +381,7 @@ def run_query_rest(settings: dict, sql: str, max_rows: int | None = None,
         print(f"note: the server runs this query asynchronously ({statement}). Waiting for the result.",
               file=sys.stderr)
         urls = wait_for_job(settings, _header(headers, "Location"), opener)
-        columns, rows = download_results(urls, opener)
+        columns, rows = download_results(urls, opener, int(settings.get("LQ_MAX_DOWNLOAD_MB") or MAX_DOWNLOAD_MB))
     else:
         columns, rows = parse_rows(json.loads(raw))
     elapsed = time.monotonic() - start
@@ -386,6 +417,16 @@ def _positive(text: str) -> int:
     return n
 
 
+def _zero_or_more(text: str) -> int:
+    try:
+        n = int(text)
+    except ValueError:
+        n = -1
+    if n < 0:
+        raise argparse.ArgumentTypeError(f"must be a whole number of 0 or more, not '{text}'. 0 means no limit.")
+    return n
+
+
 class _Parser(argparse.ArgumentParser):
     def error(self, message):
         # argparse exits with 2, but 2 means "retry later" here. A usage error is not retryable.
@@ -399,6 +440,8 @@ def main(argv: list[str], opener=urllib.request.urlopen, settings: dict | None =
     p.add_argument("-f", "--file", help="read the SQL from a file")
     p.add_argument("--max-rows", type=_positive, help="at most this many rows (default: all rows; MCP: at most 200)")
     p.add_argument("--json", action="store_true", help="print columns and rows as JSON")
+    p.add_argument("--max-download-mb", type=_zero_or_more, metavar="MB",
+                   help=f"stop a large asynchronous result above this size (default {MAX_DOWNLOAD_MB}; 0 = no limit)")
     p.add_argument("--env-file", help="settings file (default tools/lq.env)")
     args = p.parse_args(argv)
     if args.file:
@@ -409,6 +452,8 @@ def main(argv: list[str], opener=urllib.request.urlopen, settings: dict | None =
     else:
         p.error("give the SQL as an argument or with -f")
     settings = settings or load_settings(args.env_file)
+    if args.max_download_mb is not None:
+        settings = dict(settings, LQ_MAX_DOWNLOAD_MB=str(args.max_download_mb))
     try:
         elapsed, columns, rows = run_query(settings, sql, args.max_rows, opener=opener)
     except QueryError as e:

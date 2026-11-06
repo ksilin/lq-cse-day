@@ -22,6 +22,11 @@ Tableflow writes the topic to an Iceberg table in Confluent storage, about every
 `tools/lq_watch.py` repeats a Lightning query every second until the marker shows.
 `tableflow/tableflow_watch.sh` repeats a DuckDB query on the Iceberg table every 30 seconds until the marker shows.
 
+Why DuckDB: Tableflow publishes Iceberg tables through an Iceberg REST catalog. DuckDB reads them on your laptop with the Global key. It needs no server and no account.
+Trino or Spark can also read the catalog, but you must run and configure a server for them.
+Databricks or Snowflake can also read it, but they need an account in that product and a catalog integration.
+A Flink snapshot query is not a Tableflow check, because it adds the newest Kafka data. [docs/duckdb.md](../../docs/duckdb.md) explains DuckDB and the catalog.
+
 ## Requirements
 
 - Lab 1 is done. RTCE and Tableflow are on for `lq_orders`.
@@ -38,7 +43,7 @@ Tableflow writes the topic to an Iceberg table in Confluent storage, about every
 set -a; . tools/lq.env; set +a
 ```
 
-2. Create a Kafka API key for your cluster, and add it to `tools/lq.env`. Your Global key does not work here, because Global keys do not support Standard clusters.
+2. Create a Kafka API key for your cluster, and add it to `tools/lq.env`. Your Global key does not work here, because a Global key cannot produce to a Basic or Standard cluster. For Lightning queries, the Global key works on all cluster types.
 
 ```bash
 confluent api-key create --resource "$LQ_CLUSTER_ID" \
@@ -166,15 +171,17 @@ Output of step 8 in the same run:
 18:47:13  found. Visible in Tableflow after 4 min 23 s
 ```
 
-The Tableflow docs say: "Tableflow publishes new data to a table approximately every 5 minutes." No setting makes this faster.
+The Tableflow docs say: "Tableflow publishes new data to a table approximately every 5 minutes."
+
+The 5 minutes are best effort. A busy topic can publish sooner. No setting makes it faster.
 
 ## Notes
 
 - Why stop the feed: RTCE reads only committed data. A reader cannot read past the oldest open transaction in a partition. With the feed running, a marker waited 48 seconds; with the feed stopped, 2 to 3 seconds.
 - For customers: Lightning freshness depends on the producer. A Flink exactly-once producer adds up to one checkpoint interval, about 60 seconds.
 - No Kafka key? Use Flink instead. It takes about 10 seconds, because the statement must start: `confluent flink statement create lq-$LQ_NAME-marker-2 --sql "$(sed -e "s/{n}/2/g" sql/03_insert_marker.sql)" --environment "$LQ_ENV_ID" --database "$LQ_CLUSTER_ID" --compute-pool "$LQ_POOL_ID"`.
-- Do not use a Flink `SELECT` to check Tableflow. A Flink snapshot query reads the Iceberg table plus the newest Kafka data, so it shows the marker at once.
-- To see the marker rows in DuckDB yourself, use `tableflow/duckdb_tableflow.sql`. Replace the placeholders in it. The DuckDB secret expires after about 30 minutes with HTTP 401; run the file again.
+- Do not use a Flink snapshot query to check Tableflow. It reads the Iceberg table plus the newest Kafka data, so it shows the marker at once. But it is a good way to run what Lightning cannot, for example `COUNT(*)`. See [docs/limits.md](../../docs/limits.md).
+- To see the marker rows in DuckDB yourself, use `tableflow/duckdb_tableflow.sql`. Replace the placeholders in it. The DuckDB secret expires after 15 minutes (`"expires_in": 900`, tested on 2026-11-06) with HTTP 401; run the file again.
 
 ## Clean up
 
