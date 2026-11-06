@@ -22,7 +22,7 @@ O4 calls the RTCE MCP endpoint. Claude Code can use the same endpoint as a tool 
 ## Requirements
 
 - Lab 3 is done. The settings in `tools/lq.env` are loaded: `set -a; . tools/lq.env; set +a`.
-- O3: Java 17 or later: `java -version`. The Java client uses REST only, so O3 needs an org with REST access.
+- O3: Java 17 or later: `java -version`. The Java client uses REST only.
 - O4: Claude Code, if you want to ask questions in natural language: `claude --version`.
 
 ## Run
@@ -111,7 +111,7 @@ MCP returns at most 200 rows, and the model does not know when the result was cu
 
 ## Look
 
-I ran these commands on 2026-11-06 in an org with REST access. In an org without REST access, the error lines start with `MCP` instead of `HTTP 400`, and the message text can differ a little. The error codes are the same.
+I ran these commands on 2026-11-06. If `lq.py` falls back to MCP, the error lines start with `MCP` instead of `HTTP 400`, and the message text can differ a little. The error codes are the same.
 
 ### O1
 

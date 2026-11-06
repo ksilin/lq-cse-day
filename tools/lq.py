@@ -12,7 +12,7 @@ variables with the same names override the file.
 
 LQ_MODE selects the access path:
   auto (default)  REST first. If the org has no REST access (403 api_not_enabled), use MCP.
-  rest            REST only (Lightning Queries, Early Access, needs an org flag).
+  rest            REST only.
   mcp             MCP only (queryData tool, on in every org). Needs LQ_ORG_ID.
 Both paths return the same columns and rows.
 
@@ -51,7 +51,7 @@ CHUNK = 1 << 20
 
 RETRY = "Table not ready yet: retry in 30 s. Up to 10 minutes after ACTIVE is normal (12 for upsert)."
 HINTS = {
-    "api_not_enabled": "This org has no Lightning Queries REST access (Early Access). Set LQ_MODE=mcp in tools/lq.env: MCP works in every org. Or check that the key is from the right org.",
+    "api_not_enabled": "REST is not on for this org, or the Global key is from another org. Check the org of the key. Or set LQ_MODE=mcp in tools/lq.env: MCP works in every org.",
     "FE_CUSTOMER_NOT_FOUND": "No Lightning table on this cluster yet. Check LQ_ENV_ID and LQ_CLUSTER_ID. " + RETRY,
     "FE_BACKEND_UNAVAILABLE": RETRY,
     "FE_TABLE_NOT_AVAILABLE": RETRY,

@@ -15,7 +15,7 @@ https://docs.confluent.io/cloud/current/lightning-tables/query/api.html
 1. **A query without `LIMIT` returns every row.**
    - Fact: REST has no row limit. A large or slow query runs asynchronously, and the result comes as files. On 2026-11-06, `SELECT * FROM lq_orders` on our lab topic gave one file of 632 MB with 6,031,066 rows. The feed in Lab 1 adds rows all the time, so the result grows during the day.
    - Avoid: always add `LIMIT`, or a `WHERE` clause on a key. `tools/lq.py` stops a download above 100 MB with `result_too_large`. Change the limit with `--max-download-mb`, or set `LQ_MAX_DOWNLOAD_MB` in `tools/lq.env`. `0` means no limit, and a result of that size needs several GB of memory.
-   - Tell customers: a client must set `LIMIT` or `max_result_rows`, and must handle the asynchronous answer (`202`, poll the job, download the files). The docs say that a result has a maximum size, but they give no number.
+   - Tell customers: a client must set `LIMIT` or `max_result_rows`, and must handle the asynchronous answer (`202`, poll the job, download the files). The API reference says: a query that ends in under 10 seconds with a result under 4 MiB answers `200`, others `202`. You cannot predict the answer for one query, so a client must handle both. The docs say that a result has a maximum size, but they give no number. 632 MB is the largest result that we saw.
 2. **MCP returns at most 200 rows, with no warning.**
    - Fact: `queryData` returns 200 rows also when you ask for more. The answer does not say that rows are missing.
    - Avoid: use REST for more rows. Exactly 200 rows means that the result was cut.
@@ -66,7 +66,7 @@ The three ways to read a topic, in one line each:
 
 ## More limits
 
-- **Rate limit.** REST and MCP share one rate limit. Too many queries give HTTP 429. All people in one org share it during the labs. Use `lq_watch.py --interval 5` if you see 429.
+- **Rate limit.** REST and MCP share one rate limit. Too many queries give HTTP 429. The docs do not give the number or the scope (org, key or IP address). Assume that all people in one org share it during the labs. Use `lq_watch.py --interval 5` if you see 429.
 - **Quoted names.** Without quotes, names are not case-sensitive. With quotes, they must be upper case: `"ORDER_ID"` works, `"order_id"` gives `FE_SQL_VALIDATION_ERROR`.
 - **Committed data only.** RTCE reads only committed data. A Flink statement that writes to the same topic holds back every new event until its next commit, about 60 seconds. Tell customers: the freshness depends on the producer.
 - **Schema changes.** The docs: after an unsupported schema change, the table stops taking new records, and queries return an error. The status stays `ACTIVE`. Disable and enable does not fix it. Renamed columns, new required columns and key schema changes are not supported. Tell customers: test a schema change on a copy first.
@@ -74,8 +74,8 @@ The three ways to read a topic, in one line each:
 - **Retention.** The docs: the table keeps its data after the topic retention ends. An upsert table deletes a key only on a tombstone. Tell customers: plan the deletion of personal data.
 - **Async job visibility.** The docs: every principal that can read the topic can poll every async job on that topic, and get its result URL. Tell customers: the result of a query is visible to all readers of the topic.
 - **Upsert key.** The docs: the key can be raw bytes, Avro, Protobuf or JSON Schema. The labs tested only a raw key. With a raw key, the Flink column must be named `key`. The topic needs `cleanup.policy=compact`.
-- **Same topic name again.** Do not delete a topic and create it again with the same name. In our runs RTCE kept old state. For a table in `FAILED`, the docs say: fix the cause, then disable and enable the table.
+- **Same topic name again.** Do not delete a topic and create it again with the same name. RTCE keeps old state for that name, and the table is empty or old. Disable and enable does not fix it. Use a new topic name. Tell customers this. For a table in `FAILED` for another cause, the docs say: fix the cause, then disable and enable the table.
 - **Keys.** Only a Global API key works for queries. A Cloud key gives `resource_not_found` over MCP, and a cluster key gives HTTP 401. A user can have at most 2 Global keys. A Global key cannot produce to a Basic or Standard cluster: the labs use a Kafka key for that.
 - **Clouds and networks.** AWS only. The Console query pane does not work over a private network. The docs: with private networking, MCP access can cross environments.
-- **Tableflow.** It publishes about every 5 minutes. This is best effort, and a busy topic can publish sooner. No setting makes it faster. The DuckDB catalog token expires after 15 minutes.
+- **Tableflow.** It publishes about every 5 minutes. This is best effort, and a busy topic can publish sooner. No setting makes it faster. The DuckDB catalog token expires after 15 minutes. The docs say that the key and the value need a schema. Our topics have only a value schema (raw key), and Tableflow worked.
 - **Cost.** The cluster, the Flink pool, RTCE and Tableflow cost money while they run. Clean up in Lab 1 deletes them.

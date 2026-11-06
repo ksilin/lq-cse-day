@@ -78,7 +78,7 @@ def check_query(s: dict, mode: str, run=lq.run_query) -> Check:
         _, _, rows = run(dict(s, LQ_MODE=mode), "SHOW TABLES")
     except lq.QueryError as e:
         if mode == "rest" and e.code == "api_not_enabled":
-            return Check(name, "WARN", "this org has no REST access (Early Access)",
+            return Check(name, "WARN", "REST is not on for this org, or the key is from another org",
                          "Nothing to do with LQ_MODE=auto or mcp: lq.py then uses MCP.")
         if e.status == 401:
             return Check(name, "FAIL", f"401 {e.code}", "Check LQ_API_KEY and LQ_API_SECRET. Use a Global key of this org.")

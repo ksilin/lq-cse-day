@@ -12,7 +12,7 @@ Run `python3 tools/lq_doctor.py` first. It checks the login, the IDs, the region
 
 ## Access
 
-- `HTTP 403 api_not_enabled`, "The REST API is not enabled for this organization." Cause: the org has no REST access (Early Access), or the Global key belongs to another org. Fix: keep `LQ_MODE=auto` or set `LQ_MODE=mcp`. Then `lq.py` uses MCP, which works in every org.
+- `HTTP 403 api_not_enabled`, "The REST API is not enabled for this organization." Cause: the Global key belongs to another org. REST is on for every org now, so this is the most likely cause. Fix: keep `LQ_MODE=auto` or set `LQ_MODE=mcp`. Then `lq.py` uses MCP, which works in every org.
 - `HTTP 401 unauthenticated`, "The API key is invalid, or is not a key that authenticates a whole organization." Cause: a cluster key, a wrong secret, or a space in the secret. Fix: use a Global key of the lab org. Copy the secret again.
 - Global key create fails. Cause: you already have 2 Global keys (the limit per user). Fix: delete one, or use one of them. The key must belong to the lab org.
 - `FE_AUTHORIZATION_FAILED`. Cause: no DeveloperRead on the cluster or on Schema Registry. Fix: ask an OrganizationAdmin of your org for EnvironmentAdmin on the lab environment. EnvironmentAdmin covers both.

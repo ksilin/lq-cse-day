@@ -27,7 +27,7 @@ Install and check these before the CSE Day:
 
 - Lab 1 builds it: an environment `lq-$LQ_NAME`, a Standard cluster `lq-$LQ_NAME-cluster`, and a Flink pool `lq-$LQ_NAME-pool`. `LQ_NAME` is your short name, for example your initials.
 - If you cannot create an environment, Lab 1 builds the cluster and the pool in an existing environment.
-- REST access (Lightning Queries) is Early Access, and only some orgs have it. MCP works in every org. `tools/lq.py` uses REST if it can, and MCP if it cannot. You get the same rows.
+- REST and MCP work in every org. If an org answers `403 api_not_enabled`, `tools/lq.py` uses MCP. You get the same rows.
 - It costs money while it runs. Lab 1, Clean up, deletes all of it.
 
 ## When something fails
@@ -69,7 +69,7 @@ Flink, Kafka and Tableflow:
 5. REST has no row limit. MCP returns at most 200 rows, with no warning.
 6. Both paths give the same columns and rows. `lq.py` adds the time of the request and a hint for each known error code.
 
-The same requests with `curl`. Load the settings first with `set -a; . tools/lq.env; set +a`. REST works only in an org with REST access:
+The same requests with `curl`. Load the settings first with `set -a; . tools/lq.env; set +a`. REST works in every org:
 
 ```bash
 curl -sS -X POST "https://sql.$LQ_REGION.aws.confluent.cloud/query/v1" \

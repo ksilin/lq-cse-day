@@ -20,8 +20,8 @@ Flink SQL creates the topic `lq_orders` with an Avro value schema (`sql/01_creat
 A continuous Flink statement copies the built-in sample data `examples.marketplace.orders` into it (`sql/02_feed_orders.sql`).
 RTCE reads the topic and keeps it as a Lightning table in its own storage.
 You can query a Lightning table in two ways: over REST (Lightning Queries) or over MCP (the `queryData` tool).
-REST is Early Access, and it works only in an org with REST access. MCP works in every org.
-`tools/lq.py` tries REST first. If the org has no REST access, it uses MCP. Both return the same rows.
+REST and MCP work in every org.
+`tools/lq.py` tries REST first. If the org answers `403 api_not_enabled`, it uses MCP. Both return the same rows.
 
 ## Requirements
 
@@ -213,7 +213,7 @@ Part C done. Next: look at the results.
 
 ## Look
 
-I ran these commands on 2026-10-27 in an org with REST access. In an org without REST access, `lq.py` prints the same rows, plus one `note:` line.
+I ran these commands on 2026-10-27 in an org with REST access. If `lq.py` falls back to MCP, it prints the same rows, plus one `note:` line.
 
 The feed statement runs. This is the state right after step 10: Lab 2 stops the feed later, so doc-check skips this block. The CLI notice about the Flink endpoint goes to stderr, so `2>/dev/null` hides it.
 
@@ -299,7 +299,7 @@ You are done with Lab 1 when `lq.py` prints rows from your table.
 
 ## Notes
 
-- The raw REST request, for an org with REST access: `curl -sS -X POST "https://sql.$LQ_REGION.aws.confluent.cloud/query/v1" -u "$LQ_API_KEY:$LQ_API_SECRET" -H "Content-Type: application/json" -d "{\"catalog_name\":\"$LQ_ENV_ID\",\"database_name\":\"$LQ_CLUSTER_ID\",\"query\":\"SELECT STATUS FROM lq_orders LIMIT 1\"}" | jq -c .result.data`. The section Tools of the main README shows the REST and the MCP request.
+- The raw REST request: `curl -sS -X POST "https://sql.$LQ_REGION.aws.confluent.cloud/query/v1" -u "$LQ_API_KEY:$LQ_API_SECRET" -H "Content-Type: application/json" -d "{\"catalog_name\":\"$LQ_ENV_ID\",\"database_name\":\"$LQ_CLUSTER_ID\",\"query\":\"SELECT STATUS FROM lq_orders LIMIT 1\"}" | jq -c .result.data`. The section Tools of the main README shows the REST and the MCP request.
 - `403 api_not_enabled` over REST means that the org has no REST access. It can also mean that the Global key belongs to another org. A Global key belongs to the org that was selected when you created it.
 - Column names are not case-sensitive without quotes. With quotes they must be upper case: `"ORDER_ID"` works, `"order_id"` fails with `FE_SQL_VALIDATION_ERROR`.
 - **Always add `LIMIT`, or a `WHERE` clause on a key.** Without it, REST returns every row. On 2026-11-06, `SELECT * FROM lq_orders` gave one file of 632 MB with 6,031,066 rows. The feed adds rows all the time. `tools/lq.py` stops a download above 100 MB with `result_too_large`. More limits: [docs/limits.md](../../docs/limits.md).
